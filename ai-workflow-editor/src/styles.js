@@ -784,10 +784,10 @@ export const canvasStyles = {
     flex: 1,
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
+    gap: '8px',
     overflowX: 'auto',
     overflowY: 'hidden',
-    padding: '4px 0'
+    padding: '2px 0'
   },
 
   timelineItem: {
@@ -795,15 +795,15 @@ export const canvasStyles = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: '6px',
-    padding: '10px',
+    gap: '4px',
+    padding: '8px',
     backgroundColor: colors.background.primary,
     border: `1px solid ${colors.border.default}`,
     borderRadius: '8px',
     cursor: 'pointer',
     transition: 'all 0.2s',
-    minWidth: '120px',
-    minHeight: '100px',
+    minWidth: '112px',
+    minHeight: '96px',
     ':hover': {
       borderColor: colors.node.default,
       boxShadow: '0 2px 8px rgba(33, 150, 243, 0.15)'
@@ -840,13 +840,13 @@ export const canvasStyles = {
   },
 
   timelineItemSequence: {
-    fontSize: '11px',
+    fontSize: '10px',
     fontWeight: 700,
     color: colors.node.default,
     backgroundColor: `${colors.node.default}15`,
-    padding: '2px 8px',
+    padding: '1px 6px',
     borderRadius: '10px',
-    minWidth: '24px',
+    minWidth: '20px',
     textAlign: 'center'
   },
 

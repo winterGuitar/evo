@@ -1718,11 +1718,11 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
                           onMouseEnter={(e) => e.target.play()}
                           onMouseLeave={(e) => e.target.pause()}
                           style={{
-                            width: '100px',
-                            height: '56px',
+                            width: '104px',
+                            height: '64px',
                             objectFit: 'cover',
                             borderRadius: '6px',
-                            marginTop: '6px'
+                            marginTop: '4px'
                           }}
                         />
                       ) : (
@@ -1730,11 +1730,11 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
                           src={item.preview}
                           alt={item.label}
                           style={{
-                            width: '100px',
-                            height: '56px',
+                            width: '104px',
+                            height: '64px',
                             objectFit: 'cover',
                             borderRadius: '6px',
-                            marginTop: '6px'
+                            marginTop: '4px'
                           }}
                         />
                       )
