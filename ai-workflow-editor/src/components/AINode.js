@@ -96,7 +96,14 @@ const AINode = ({
     const value = event.target.value;
     // 只允许数字输入
     const numericValue = value === '' ? '' : Math.max(1, parseInt(value, 10) || 1);
-    onSequenceChange(id, numericValue);
+    onSequenceChange(id, numericValue, false); // false 表示这是暂存值，不检查重复
+  }, [id, onSequenceChange]);
+
+  const handleSequenceBlur = useCallback((event) => {
+    if (!onSequenceChange) return;
+    const value = event.target.value;
+    const numericValue = value === '' ? '' : Math.max(1, parseInt(value, 10) || 1);
+    onSequenceChange(id, numericValue, true); // true 表示失焦，需要检查重复
   }, [id, onSequenceChange]);
 
   const handleOpenFilePicker = useCallback((event) => {
@@ -233,6 +240,7 @@ const AINode = ({
           className="nodrag nopan"
           value={data.sequenceNumber || ''}
           onChange={handleSequenceChange}
+          onBlur={handleSequenceBlur}
           onMouseDown={(event) => event.stopPropagation()}
           style={{
             width: '45px',

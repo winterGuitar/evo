@@ -16,6 +16,7 @@ import {
   edgeStyles,
   miniMapStyles,
   globalStyles,
+  colors,
 } from './styles';
 import {
   NODE_PALETTE_CATEGORIES,
@@ -404,6 +405,10 @@ const App = () => {
   const [lastSaveTime, setLastSaveTime] = useState(null);
   const autoSaveTimerRef = useRef(null);
 
+  // 视频时间轴相关状态
+  const [selectedTimelineItems, setSelectedTimelineItems] = useState([]);
+  const [isTimelineCollapsed, setIsTimelineCollapsed] = useState(false);
+
   const imageInputPreviewVersion = useMemo(() => {
     return nodes
       .filter((node) => ['image-input', 'video-input', 'video-gen', 'image-gen'].includes(node.type))
@@ -419,6 +424,30 @@ const App = () => {
         return `${node.id}:${content}:${node.data?.fileName || ''}`;
       })
       .join('|');
+  }, [nodes]);
+
+  // 计算视频时间轴项目（视频输入节点和视频生成节点，按序号排序）
+  const timelineItems = useMemo(() => {
+    const videoNodes = nodes.filter((node) =>
+      ['video-input', 'video-gen'].includes(node.type) &&
+      node.data?.sequenceNumber &&
+      (node.data?.preview || node.data?.lastFrame)
+    );
+
+    return videoNodes
+      .sort((a, b) => {
+        const seqA = a.data.sequenceNumber || 999;
+        const seqB = b.data.sequenceNumber || 999;
+        return seqA - seqB;
+      })
+      .map((node) => ({
+        id: node.id,
+        type: node.type,
+        sequenceNumber: node.data.sequenceNumber,
+        label: node.data.label || node.data.fileName || '未命名',
+        preview: node.data.preview || node.data.lastFrame,
+        fileName: node.data.fileName
+      }));
   }, [nodes]);
 
   useEffect(() => {
@@ -760,7 +789,7 @@ const App = () => {
     });
   }, [setNodes]);
 
-  const handleSequenceChange = useCallback((nodeId, sequenceNumber) => {
+  const handleSequenceChange = useCallback((nodeId, sequenceNumber, checkDuplicate = false) => {
     if (!nodeId) return;
 
     // 如果清空序号，直接允许
@@ -789,16 +818,18 @@ const App = () => {
       return;
     }
 
-    // 检查序号是否与其他节点重复
-    const currentNodes = nodesRef.current;
-    const duplicateNode = currentNodes.find(
-      (node) => node.id !== nodeId && node.data?.sequenceNumber === sequenceNumber
-    );
+    // 只有在失焦时才检查序号是否与其他节点重复
+    if (checkDuplicate) {
+      const currentNodes = nodesRef.current;
+      const duplicateNode = currentNodes.find(
+        (node) => node.id !== nodeId && node.data?.sequenceNumber === sequenceNumber
+      );
 
-    if (duplicateNode) {
-      const duplicateNodeLabel = duplicateNode.data?.label || duplicateNode.id?.slice(-6) || '未知节点';
-      alert(`序号 ${sequenceNumber} 已被节点 "${duplicateNodeLabel}" 使用，请使用其他序号`);
-      return;
+      if (duplicateNode) {
+        const duplicateNodeLabel = duplicateNode.data?.label || duplicateNode.id?.slice(-6) || '未知节点';
+        alert(`序号 ${sequenceNumber} 已被节点 "${duplicateNodeLabel}" 使用，请使用其他序号`);
+        return;
+      }
     }
 
     setNodes((nds) => nds.map((node) => {
@@ -1237,7 +1268,36 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
     const data = await loadDataFromFile(event);
     if (data) {
       if (data.nodes && data.nodes.length > 0) {
-        setNodes(data.nodes);
+        // 处理节点数据，将 base64 转换为 Blob URL
+        const processedNodes = await Promise.all(data.nodes.map(async (node) => {
+          const processedNode = { ...node };
+
+          // 处理 preview（base64 转 Blob URL）
+          if (processedNode.data?.preview?.startsWith('data:')) {
+            try {
+              const blob = await fetch(processedNode.data.preview)
+                .then(res => res.blob());
+              processedNode.data.preview = URL.createObjectURL(blob);
+            } catch (e) {
+              console.error('转换 preview 失败:', e);
+            }
+          }
+
+          // 处理 lastFrame（base64 转 Blob URL）
+          if (processedNode.data?.lastFrame?.startsWith('data:')) {
+            try {
+              const blob = await fetch(processedNode.data.lastFrame)
+                .then(res => res.blob());
+              processedNode.data.lastFrame = URL.createObjectURL(blob);
+            } catch (e) {
+              console.error('转换 lastFrame 失败:', e);
+            }
+          }
+
+          return processedNode;
+        }));
+
+        setNodes(processedNodes);
       }
       if (data.edges && data.edges.length > 0) {
         setEdges(data.edges);
@@ -1263,6 +1323,158 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
   const handleOpenFileDialog = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
+
+  // 时间轴相关处理函数
+  const handleTimelineItemClick = useCallback((itemId) => {
+    if (selectedTimelineItems.includes(itemId)) {
+      setSelectedTimelineItems((prev) => prev.filter((id) => id !== itemId));
+    } else {
+      setSelectedTimelineItems((prev) => [...prev, itemId]);
+    }
+  }, [selectedTimelineItems]);
+
+  const handleSelectAllTimeline = useCallback(() => {
+    const allIds = timelineItems.map((item) => item.id);
+    setSelectedTimelineItems(allIds);
+  }, [timelineItems]);
+
+  const handleClearTimelineSelection = useCallback(() => {
+    setSelectedTimelineItems([]);
+  }, []);
+
+  const handleComposeVideo = useCallback(async () => {
+    if (selectedTimelineItems.length < 2) {
+      alert('请至少选择 2 个视频节点进行合成');
+      return;
+    }
+
+    // 按序号排序选中的节点
+    const sortedItems = timelineItems
+      .filter((item) => selectedTimelineItems.includes(item.id))
+      .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+
+    const selectedUrls = sortedItems.map((item) => item.preview);
+    const selectedSequenceNumbers = sortedItems.map((item) => item.sequenceNumber);
+
+    console.log('开始合成视频，顺序:', selectedSequenceNumbers);
+    console.log('视频URLs:', selectedUrls);
+
+    // 前端本地视频合成
+    try {
+      alert('开始合成视频，请稍候...');
+
+      // 使用 MediaRecorder API 在浏览器中合并视频
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      // 加载所有视频
+      const videoElements = [];
+      for (const url of selectedUrls) {
+        const video = document.createElement('video');
+        video.src = url;
+        video.crossOrigin = 'anonymous';
+        video.muted = true;
+
+        await new Promise((resolve) => {
+          video.onloadedmetadata = () => {
+            console.log('视频加载完成:', url);
+            resolve();
+          };
+          video.onerror = (e) => {
+            console.error('视频加载失败:', url, e);
+            resolve(); // 即使失败也继续
+          };
+          // 设置超时
+          setTimeout(() => {
+            console.warn('视频加载超时:', url);
+            resolve();
+          }, 10000);
+        });
+
+        videoElements.push(video);
+      }
+
+      // 设置画布尺寸（使用第一个视频的尺寸）
+      const firstVideo = videoElements[0];
+      const canvasWidth = firstVideo.videoWidth || 1280;
+      const canvasHeight = firstVideo.videoHeight || 720;
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+      console.log('画布尺寸:', canvasWidth, 'x', canvasHeight);
+
+      // 检查 MediaRecorder 支持的格式
+      let mimeType = 'video/webm;codecs=vp9';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm;codecs=vp8';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'video/webm';
+        }
+      }
+      console.log('使用媒体格式:', mimeType);
+
+      // 创建 MediaRecorder
+      const stream = canvas.captureStream(30); // 30 FPS
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: 5000000 // 5 Mbps
+      });
+
+      const chunks = [];
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `composed_video_${Date.now()}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+        alert(`视频合成成功！\n合成序号: ${selectedSequenceNumbers.join(', ')}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+      };
+
+      mediaRecorder.start();
+      console.log('MediaRecorder 已启动');
+
+      // 依次播放并绘制每个视频到画布
+      for (let i = 0; i < videoElements.length; i++) {
+        const video = videoElements[i];
+        console.log(`正在处理第 ${i + 1}/${videoElements.length} 个视频`);
+
+        await new Promise((resolve) => {
+          video.currentTime = 0;
+          video.onended = resolve;
+
+          const drawFrame = () => {
+            ctx.drawImage(video, 0, 0, canvasWidth, canvasHeight);
+            if (!video.ended) {
+              requestAnimationFrame(drawFrame);
+            }
+          };
+
+          video.play().then(() => {
+            drawFrame();
+          }).catch((e) => {
+            console.error('视频播放失败:', e);
+            resolve();
+          });
+        });
+      }
+
+      // 等待一小段时间确保最后几帧被录制
+      await new Promise(r => setTimeout(r, 100));
+
+      mediaRecorder.stop();
+      console.log('MediaRecorder 已停止');
+    } catch (error) {
+      console.error('视频合成失败:', error);
+      alert(`视频合成失败: ${error.message}\n请查看控制台获取详细信息`);
+    }
+  }, [selectedTimelineItems, timelineItems]);
 
   return (
     <div style={globalStyles.appContainer}>
@@ -1303,7 +1515,13 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
           <MiniMap
             nodeColor={(node) => getNodeColor(node.type)}
             nodeStrokeWidth={2}
-            style={miniMapStyles.container}
+            style={{
+              ...miniMapStyles.container,
+              position: 'absolute',
+              bottom: isTimelineCollapsed ? '40px' : '160px',
+              right: '10px',
+              transition: 'bottom 0.3s ease'
+            }}
           />
           <Controls />
           <Background color="#eaeef2" gap={16} />
@@ -1355,7 +1573,162 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
               </p>
             </Panel>
           )}
-        </ReactFlow>
+          </ReactFlow>
+
+          {/* 视频时间轴 */}
+          {timelineItems.length > 0 && (
+            <div style={{
+              ...canvasStyles.timelineContainer,
+              height: isTimelineCollapsed ? '40px' : '160px',
+              transition: 'height 0.3s ease'
+            }}>
+              <div style={canvasStyles.timelineHeader}>
+                <div style={canvasStyles.timelineTitle}>
+                  🎬 视频时间轴
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 400,
+                    color: colors.text.light,
+                    marginLeft: '6px'
+                  }}>
+                    ({timelineItems.length} 个视频)
+                  </span>
+                </div>
+                <div style={{
+                  ...canvasStyles.timelineActions,
+                  opacity: isTimelineCollapsed ? 0 : 1,
+                  transition: 'opacity 0.3s ease',
+                  pointerEvents: isTimelineCollapsed ? 'none' : 'auto'
+                }}>
+                  <button
+                    type="button"
+                    onClick={handleSelectAllTimeline}
+                    style={{
+                      ...canvasStyles.timelineButton,
+                      ...canvasStyles.timelineButtonSecondary
+                    }}
+                  >
+                    全选
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearTimelineSelection}
+                    style={{
+                      ...canvasStyles.timelineButton,
+                      ...canvasStyles.timelineButtonSecondary
+                    }}
+                  >
+                    清空
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleComposeVideo}
+                    disabled={selectedTimelineItems.length < 2}
+                    style={{
+                      ...canvasStyles.timelineButton,
+                      ...canvasStyles.timelineButtonPrimary,
+                      ...(selectedTimelineItems.length < 2 ? {
+                        opacity: 0.5,
+                        cursor: 'not-allowed'
+                      } : {})
+                    }}
+                  >
+                    🎥 合成视频 ({selectedTimelineItems.length})
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    right: '12px',
+                    transform: 'translateY(-50%)',
+                    background: colors.background.hover,
+                    border: `1px solid ${colors.border.default}`,
+                    borderRadius: '6px',
+                    padding: '6px 10px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    color: colors.text.light,
+                    transition: 'all 0.2s ease',
+                    zIndex: 10,
+                    ':hover': {
+                      background: colors.background.secondary,
+                      borderColor: colors.text.light
+                    }
+                  }}
+                  title={isTimelineCollapsed ? '展开时间轴' : '折叠时间轴'}
+                >
+                  {isTimelineCollapsed ? '▲ 展开' : '▼ 折叠'}
+                </button>
+              </div>
+              <div style={{
+                ...canvasStyles.timelineContent,
+                opacity: isTimelineCollapsed ? 0 : 1,
+                transition: 'opacity 0.3s ease',
+                pointerEvents: isTimelineCollapsed ? 'none' : 'auto'
+              }}>
+                {timelineItems.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => handleTimelineItemClick(item.id)}
+                    style={{
+                      ...canvasStyles.timelineItem,
+                      ...(selectedTimelineItems.includes(item.id) ? canvasStyles.timelineItemSelected : {})
+                    }}
+                  >
+                    {selectedTimelineItems.includes(item.id) && (
+                      <div style={canvasStyles.timelineItemSelectedBadge}>
+                        <span style={canvasStyles.timelineItemSelectedCheck}>✓</span>
+                      </div>
+                    )}
+                    <div style={canvasStyles.timelineItemSequence}>
+                      #{item.sequenceNumber}
+                    </div>
+                    {item.preview && (
+                      item.type === 'video-gen' || item.preview.startsWith('blob:') ? (
+                        <video
+                          src={item.preview}
+                          muted
+                          loop
+                          autoPlay
+                          playsInline
+                          onMouseEnter={(e) => e.target.play()}
+                          onMouseLeave={(e) => e.target.pause()}
+                          style={{
+                            width: '100px',
+                            height: '56px',
+                            objectFit: 'cover',
+                            borderRadius: '6px',
+                            marginTop: '6px'
+                          }}
+                        />
+                      ) : (
+                        <img
+                          src={item.preview}
+                          alt={item.label}
+                          style={{
+                            width: '100px',
+                            height: '56px',
+                            objectFit: 'cover',
+                            borderRadius: '6px',
+                            marginTop: '6px'
+                          }}
+                        />
+                      )
+                    )}
+                  </div>
+                ))}
+                {timelineItems.length === 0 && (
+                  <div style={canvasStyles.timelinePlaceholder}>
+                    暂无视频节点<br/>添加有序号的视频输入或视频生成节点
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
         {contextMenu.visible && (
           <ContextMenu

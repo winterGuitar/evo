@@ -79,7 +79,11 @@ export const nodeStyles = {
     borderRadius: 20,
     letterSpacing: '0.5px',
     textTransform: 'uppercase',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    maxWidth: '180px',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
   }),
 
   deleteButton: {
@@ -707,6 +711,161 @@ export const canvasStyles = {
     alignItems: 'center',
     gap: '6px',
     border: `1px solid ${colors.status.running}30`
+  },
+
+  timelineContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '120px',
+    backgroundColor: colors.background.panel,
+    borderTop: `1px solid ${colors.border.default}`,
+    padding: '12px 16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    zIndex: 100,
+    boxShadow: '0 -2px 8px rgba(0,0,0,0.05)'
+  },
+
+  timelineHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px'
+  },
+
+  timelineTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: colors.text.primary,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px'
+  },
+
+  timelineActions: {
+    display: 'flex',
+    gap: '8px'
+  },
+
+  timelineButton: {
+    padding: '6px 12px',
+    fontSize: '12px',
+    fontWeight: 600,
+    borderRadius: '4px',
+    border: 'none',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    transition: 'all 0.2s'
+  },
+
+  timelineButtonPrimary: {
+    backgroundColor: colors.node.default,
+    color: 'white',
+    ':hover': {
+      backgroundColor: '#1976D2'
+    }
+  },
+
+  timelineButtonSecondary: {
+    backgroundColor: colors.background.hover,
+    color: colors.text.secondary,
+    border: `1px solid ${colors.border.default}`,
+    ':hover': {
+      backgroundColor: colors.background.secondary
+    }
+  },
+
+  timelineContent: {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    overflowX: 'auto',
+    overflowY: 'hidden',
+    padding: '4px 0'
+  },
+
+  timelineItem: {
+    flex: '0 0 auto',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '10px',
+    backgroundColor: colors.background.primary,
+    border: `1px solid ${colors.border.default}`,
+    borderRadius: '8px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    minWidth: '120px',
+    minHeight: '100px',
+    ':hover': {
+      borderColor: colors.node.default,
+      boxShadow: '0 2px 8px rgba(33, 150, 243, 0.15)'
+    }
+  },
+
+  timelineItemSelected: {
+    borderColor: colors.node.default,
+    backgroundColor: `${colors.node.default}08`,
+    position: 'relative',
+    overflow: 'visible'
+  },
+
+  timelineItemSelectedBadge: {
+    position: 'absolute',
+    top: '-6px',
+    right: '-6px',
+    width: '20px',
+    height: '20px',
+    backgroundColor: colors.status.running,
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 2px 4px rgba(76, 175, 80, 0.4)',
+    zIndex: 10
+  },
+
+  timelineItemSelectedCheck: {
+    color: 'white',
+    fontSize: '12px',
+    fontWeight: 'bold',
+    lineHeight: 1
+  },
+
+  timelineItemSequence: {
+    fontSize: '11px',
+    fontWeight: 700,
+    color: colors.node.default,
+    backgroundColor: `${colors.node.default}15`,
+    padding: '2px 8px',
+    borderRadius: '10px',
+    minWidth: '24px',
+    textAlign: 'center'
+  },
+
+  timelineItemLabel: {
+    fontSize: '10px',
+    color: colors.text.light,
+    textAlign: 'center',
+    maxWidth: '80px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
+  },
+
+  timelinePlaceholder: {
+    fontSize: '12px',
+    color: colors.text.placeholder,
+    textAlign: 'center',
+    padding: '24px',
+    fontStyle: 'italic'
   }
 };
 
