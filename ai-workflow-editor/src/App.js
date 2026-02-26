@@ -498,33 +498,36 @@ const App = () => {
     setNodes((nds) => syncImageInputPreviewForGenerativeNodes(nds, edges));
   }, [edges, imageInputPreviewVersion, setNodes]);
 
+
+  // 自动保存功能已禁用
   // 30秒自动保存
-  useEffect(() => {
-    if (!saveFilePath) return;
+  // useEffect(() => {
+  //   if (!saveFilePath) return;
+  //
+  //   // 清除之前的定时器
+  //   if (autoSaveTimerRef.current) {
+  //     clearInterval(autoSaveTimerRef.current);
+  //   }
+  //
+  //   // 设置新的定时器，每30秒自动保存
+  //   autoSaveTimerRef.current = setInterval(() => {
+  //     if (nodesRef.current.length > 0 || edgesRef.current.length > 0) {
+  //       saveDataToFile(nodesRef.current, edgesRef.current, saveFilePath).then((filePath) => {
+  //         if (filePath) {
+  //           setLastSaveTime(new Date());
+  //           console.log(`自动保存成功: ${filePath}`);
+  //         }
+  //       });
+  //     }
+  //   }, 30000); // 30秒
+  //
+  //   return () => {
+  //     if (autoSaveTimerRef.current) {
+  //       clearInterval(autoSaveTimerRef.current);
+  //     }
+  //   };
+  // }, [saveFilePath]);
 
-    // 清除之前的定时器
-    if (autoSaveTimerRef.current) {
-      clearInterval(autoSaveTimerRef.current);
-    }
-
-    // 设置新的定时器，每30秒自动保存
-    autoSaveTimerRef.current = setInterval(() => {
-      if (nodesRef.current.length > 0 || edgesRef.current.length > 0) {
-        saveDataToFile(nodesRef.current, edgesRef.current, saveFilePath).then((filePath) => {
-          if (filePath) {
-            setLastSaveTime(new Date());
-            console.log(`自动保存成功: ${filePath}`);
-          }
-        });
-      }
-    }, 30000); // 30秒
-
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearInterval(autoSaveTimerRef.current);
-      }
-    };
-  }, [saveFilePath]);
 
   // 处理视频最后一帧捕获
   const handleLastFrameCaptured = useCallback((nodeId, frameData) => {
@@ -1523,7 +1526,14 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
               transition: 'bottom 0.3s ease'
             }}
           />
-          <Controls />
+          <Controls
+            style={{
+              position: 'absolute',
+              bottom: isTimelineCollapsed ? '40px' : '160px',
+              left: '10px',
+              transition: 'bottom 0.3s ease'
+            }}
+          />
           <Background color="#eaeef2" gap={16} />
 
           <Panel position="top-left" style={canvasStyles.panel}>
@@ -1552,11 +1562,6 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
               >
                 📂 打开文件
               </button>
-              {lastSaveTime && (
-                <div style={canvasStyles.autoSaveIndicator}>
-                  🔄 自动保存: {saveFilePath}
-                </div>
-              )}
             </div>
           </Panel>
 
