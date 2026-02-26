@@ -719,6 +719,21 @@ const App = () => {
     setEdges((eds) => eds.filter((edge) => edge.id !== edgeId));
   }, [setEdges]);
 
+  const attachDisconnectHandlers = useCallback((rawEdges) => {
+    if (!Array.isArray(rawEdges)) return [];
+    return rawEdges.map((edge) => {
+      if (edge?.data?.onDisconnect) return edge;
+      return {
+        ...edge,
+        type: edge?.type || 'disconnectable',
+        data: {
+          ...(edge?.data || {}),
+          onDisconnect: handleDisconnectEdge
+        }
+      };
+    });
+  }, [handleDisconnectEdge]);
+
   const handleDisconnectNodeEdges = useCallback((nodeId) => {
     if (!nodeId) return;
     setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
@@ -1242,7 +1257,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
       setSelectedNode(null);
       handleCloseContextMenu();
     }
-  }, [setNodes, setEdges, handleCloseContextMenu]);
+  }, [setNodes, setEdges, handleCloseContextMenu, attachDisconnectHandlers]);
 
   const handleSaveToFile = useCallback(async () => {
     console.log('点击保存按钮');
@@ -1303,7 +1318,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
         setNodes(processedNodes);
       }
       if (data.edges && data.edges.length > 0) {
-        setEdges(data.edges);
+        setEdges(attachDisconnectHandlers(data.edges));
       }
 
       // 记录文件路径和时间
