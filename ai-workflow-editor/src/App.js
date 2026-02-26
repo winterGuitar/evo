@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import ReactFlow, {
   addEdge,
   MiniMap,
@@ -21,11 +21,6 @@ import {
   NODE_PALETTE_CATEGORIES,
   getNodeColor,
 } from './constants';
-import {
-  getNodeHttpRequestConfig,
-  HTTP_REQUEST_DEFAULT_HEADERS,
-  HTTP_REQUEST_DEFAULT_TIMEOUT_MS
-} from './httpRequestConfig';
 import AINode from './components/AINode';
 import NodePalette from './components/NodePalette';
 import ContextMenu from './components/ContextMenu';
@@ -44,6 +39,200 @@ import {
 
 // ========== 抑制 ResizeObserver 警告 ==========
 suppressResizeObserverWarning();
+
+// ========== File Storage Helpers ==========
+// 将 Blob URL 转换为 Base64
+const convertBlobToBase64 = async (blobUrl) => {
+  if (!blobUrl || typeof blobUrl !== 'string') {
+    return blobUrl; // 不是字符串，直接返回
+  }
+
+  // 如果已经是 data URL，直接返回
+  if (blobUrl.startsWith('data:')) {
+    return blobUrl;
+  }
+
+  // 如果是 blob URL，转换为 Base64（带超时）
+  if (blobUrl.startsWith('blob:')) {
+    try {
+      const response = await Promise.race([
+        fetch(blobUrl),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('fetch timeout')), 10000))
+      ]);
+      const blob = await response.blob();
+      const dataUrl = await Promise.race([
+        new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('readFileReader timeout')), 30000))
+      ]);
+      return dataUrl;
+    } catch (error) {
+      console.error('转换 Blob URL 失败:', error);
+      return blobUrl; // 转换失败返回原 URL
+    }
+  }
+
+  // 如果是本地服务器路径（/ti2v_videos/），尝试转换为完整 URL 后再转换（带超时）
+  if (blobUrl.startsWith('/ti2v_videos/') || blobUrl.startsWith('http://') || blobUrl.startsWith('https://')) {
+    const fullUrl = blobUrl.startsWith('http') ? blobUrl : `http://localhost:3001${blobUrl}`;
+    try {
+      console.log('尝试从服务器获取文件:', fullUrl);
+      const response = await Promise.race([
+        fetch(fullUrl),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('fetch timeout')), 10000))
+      ]);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const blob = await response.blob();
+      const dataUrl = await Promise.race([
+        new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('readFileReader timeout')), 60000)) // 视频文件可能较大，给60秒
+      ]);
+      return dataUrl;
+    } catch (error) {
+      console.error('获取服务器文件失败:', error);
+      return blobUrl; // 转换失败返回原 URL
+    }
+  }
+
+  // 其他情况直接返回原值
+  return blobUrl;
+};
+
+// 递归处理节点数据，将 blob URL 转换为 base64
+const processNodesForSave = async (nodes) => {
+  return Promise.all(nodes.map(async (node) => {
+    const processedNode = { ...node };
+    if (processedNode.data) {
+      const data = { ...processedNode.data };
+
+      // 处理 preview（图片输入、视频输入、视频生成节点的预览）
+      if (data.preview) {
+        console.log(`处理节点 ${node.id} (${node.type}) 的 preview...`);
+        data.preview = await convertBlobToBase64(data.preview);
+      }
+
+      // 处理 videoUrl（视频输入节点的视频源）
+      if (data.videoUrl) {
+        console.log(`处理节点 ${node.id} 的 videoUrl...`);
+        data.videoUrl = await convertBlobToBase64(data.videoUrl);
+      }
+
+      // 处理 lastFrame（视频生成节点的最后一帧）
+      if (data.lastFrame) {
+        console.log(`处理节点 ${node.id} 的 lastFrame...`);
+        data.lastFrame = await convertBlobToBase64(data.lastFrame);
+      }
+
+      processedNode.data = data;
+    }
+    return processedNode;
+  }));
+};
+
+const saveDataToFile = async (nodes, edges, filePath = null) => {
+  try {
+    console.log('开始保存文件，节点数量:', nodes.length);
+
+    // 将所有 blob URL 转换为 base64
+    const processedNodes = await processNodesForSave(nodes);
+    console.log('节点数据处理完成');
+
+    const data = {
+      version: '1.0',
+      timestamp: new Date().toISOString(),
+      nodes: processedNodes,
+      edges,
+      filePath // 保存文件路径元数据
+    };
+    const jsonString = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+
+    // 检查文件大小
+    const fileSizeMB = blob.size / (1024 * 1024);
+    if (fileSizeMB > 50) {
+      console.warn(`文件大小较大: ${fileSizeMB.toFixed(2)}MB，可能需要较长时间保存`);
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    // 如果有指定路径则使用该路径，否则生成新文件名
+    a.download = filePath || `ai-workflow-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    console.log('文件已保存:', a.download, `(${fileSizeMB.toFixed(2)}MB)`);
+    return a.download;
+  } catch (error) {
+    console.error('保存文件失败:', error);
+    alert(`保存文件失败: ${error.message}`);
+    return null;
+  }
+};
+
+const loadDataFromFile = (event) => {
+  return new Promise((resolve, reject) => {
+    const file = event.target.files[0];
+    if (!file) {
+      resolve(null);
+      return;
+    }
+
+    if (!file.name.endsWith('.json')) {
+      alert('请选择 .json 格式的工作流文件');
+      resolve(null);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!data.nodes || !Array.isArray(data.nodes)) {
+          alert('无效的工作流文件格式');
+          resolve(null);
+          return;
+        }
+
+        // 检查节点数据
+        console.log('加载的节点数量:', data.nodes.length);
+        data.nodes.forEach((node, index) => {
+          console.log(`节点 ${index + 1} (${node.id}):`, {
+            type: node.type,
+            hasData: !!node.data,
+            hasPreview: !!node.data?.preview,
+            previewType: node.data?.preview?.startsWith('data:') ? 'base64' : 'url',
+            hasVideoUrl: !!node.data?.videoUrl,
+            hasLastFrame: !!node.data?.lastFrame
+          });
+        });
+
+        resolve(data);
+      } catch (error) {
+        console.error('解析文件失败:', error);
+        alert('文件解析失败，请检查文件格式');
+        resolve(null);
+      }
+    };
+    reader.onerror = () => {
+      alert('文件读取失败');
+      reject(new Error('文件读取失败'));
+    };
+    reader.readAsText(file);
+  });
+};
 
 const areInputPreviewListsEqual = (prevList, nextList) => {
   if (prevList === nextList) return true;
@@ -148,47 +337,6 @@ const syncImageInputPreviewForGenerativeNodes = (allNodes, allEdges) => {
   return hasChanged ? nextNodes : allNodes;
 };
 
-const collectImageInputPayload = (targetNodeId, allNodes, allEdges) => {
-  if (!targetNodeId) return [];
-  const nodeMap = new Map(allNodes.map((node) => [node.id, node]));
-
-  return allEdges
-    .filter((edge) => edge.target === targetNodeId)
-    .map((edge) => nodeMap.get(edge.source))
-    .filter((sourceNode) => ['image-input', 'video-input', 'video-gen', 'image-gen'].includes(sourceNode?.type))
-    .map((sourceNode) => {
-      let preview = '';
-      let fileName = '';
-      let isVideoSource = false;
-
-      if (sourceNode.type === 'image-input') {
-        preview = sourceNode.data?.preview || '';
-        fileName = sourceNode.data?.fileName || '';
-      } else if (sourceNode.type === 'video-input') {
-        const videoSrc = sourceNode.data?.videoUrl || sourceNode.data?.preview;
-        preview = videoSrc || '';
-        fileName = sourceNode.data?.fileName || 'video_frame.jpg';
-        isVideoSource = true;
-      } else if (sourceNode.type === 'video-gen') {
-        const videoSrc = sourceNode.data?.videoUrl || sourceNode.data?.preview;
-        preview = videoSrc || '';
-        fileName = sourceNode.data?.fileName || 'generated_video_frame.jpg';
-        isVideoSource = true;
-      } else if (sourceNode.type === 'image-gen') {
-        preview = sourceNode.data?.preview || '';
-        fileName = sourceNode.data?.fileName || 'generated_image.jpg';
-      }
-
-      return {
-        nodeId: sourceNode.id,
-        fileName,
-        preview,
-        isVideoSource
-      };
-    })
-    .filter((item) => item.preview);
-};
-
 // 从视频 URL 提取最后一帧作为图片
 const extractVideoFrame = async (videoUrl) => {
   return new Promise((resolve, reject) => {
@@ -224,86 +372,6 @@ const extractVideoFrame = async (videoUrl) => {
   });
 };
 
-const readResponsePayload = async (response) => {
-  const contentType = (response.headers.get('content-type') || '').toLowerCase();
-  if (contentType.includes('application/json')) {
-    const jsonBody = await response.json();
-    return { body: jsonBody, contentType, previewFromBinary: '' };
-  }
-
-  if (contentType.startsWith('image/')) {
-    const imageBlob = await response.blob();
-    return {
-      body: {
-        contentType,
-        size: imageBlob.size
-      },
-      contentType,
-      previewFromBinary: URL.createObjectURL(imageBlob)
-    };
-  }
-
-  const textBody = await response.text();
-  return {
-    body: textBody,
-    contentType,
-    previewFromBinary: isPreviewLikeValue(textBody) ? textBody.trim() : ''
-  };
-};
-
-const isPreviewLikeValue = (value) => {
-  if (typeof value !== 'string') return false;
-  const normalizedValue = value.trim();
-  if (!normalizedValue) return false;
-  return (
-    /^https?:\/\//i.test(normalizedValue) ||
-    normalizedValue.startsWith('/') ||
-    normalizedValue.startsWith('data:image/') ||
-    normalizedValue.startsWith('blob:')
-  );
-};
-
-const extractPreviewFromResponse = (responseBody, nodeType) => {
-  const preferredKeys = nodeType === 'video-gen'
-    ? ['thumbnail', 'thumbnailUrl', 'cover', 'coverUrl', 'poster', 'posterUrl', 'preview', 'previewUrl', 'image', 'imageUrl', 'url']
-    : ['preview', 'previewUrl', 'image', 'imageUrl', 'url', 'thumbnail', 'thumbnailUrl'];
-
-  const deepSearch = (value, depth = 0) => {
-    if (value == null || depth > 4) return '';
-
-    if (typeof value === 'string') {
-      return isPreviewLikeValue(value) ? value.trim() : '';
-    }
-
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const foundInArray = deepSearch(item, depth + 1);
-        if (foundInArray) return foundInArray;
-      }
-      return '';
-    }
-
-    if (typeof value === 'object') {
-      for (const key of preferredKeys) {
-        const candidate = value[key];
-        if (isPreviewLikeValue(candidate)) {
-          return candidate.trim();
-        }
-      }
-
-      for (const key of ['data', 'result', 'results', 'output', 'images', 'thumbnails', 'items']) {
-        const nestedValue = value[key];
-        const foundInNested = deepSearch(nestedValue, depth + 1);
-        if (foundInNested) return foundInNested;
-      }
-    }
-
-    return '';
-  };
-
-  return deepSearch(responseBody);
-};
-
 // ========== 主应用组件 ==========
 const App = () => {
   const reactFlowWrapper = useRef(null);
@@ -315,11 +383,11 @@ const App = () => {
   const [selectedNode, setSelectedNode] = useState(null);
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [isInitiated, setIsInitiated] = useState(false);
-  
+
   // 连接线拖拽状态
   const [connectStartPos, setConnectStartPos] = useState(null);
   const [pendingConnection, setPendingConnection] = useState(null);
-  
+
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState({
     visible: false,
@@ -327,6 +395,15 @@ const App = () => {
     y: 0,
     position: null
   });
+
+  // 保存文件输入框的 ref
+  const fileInputRef = useRef(null);
+
+  // 自动保存相关状态
+  const [saveFilePath, setSaveFilePath] = useState(null);
+  const [lastSaveTime, setLastSaveTime] = useState(null);
+  const autoSaveTimerRef = useRef(null);
+
   const imageInputPreviewVersion = useMemo(() => {
     return nodes
       .filter((node) => ['image-input', 'video-input', 'video-gen', 'image-gen'].includes(node.type))
@@ -391,6 +468,34 @@ const App = () => {
   useEffect(() => {
     setNodes((nds) => syncImageInputPreviewForGenerativeNodes(nds, edges));
   }, [edges, imageInputPreviewVersion, setNodes]);
+
+  // 30秒自动保存
+  useEffect(() => {
+    if (!saveFilePath) return;
+
+    // 清除之前的定时器
+    if (autoSaveTimerRef.current) {
+      clearInterval(autoSaveTimerRef.current);
+    }
+
+    // 设置新的定时器，每30秒自动保存
+    autoSaveTimerRef.current = setInterval(() => {
+      if (nodesRef.current.length > 0 || edgesRef.current.length > 0) {
+        saveDataToFile(nodesRef.current, edgesRef.current, saveFilePath).then((filePath) => {
+          if (filePath) {
+            setLastSaveTime(new Date());
+            console.log(`自动保存成功: ${filePath}`);
+          }
+        });
+      }
+    }, 30000); // 30秒
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearInterval(autoSaveTimerRef.current);
+      }
+    };
+  }, [saveFilePath]);
 
   // 处理视频最后一帧捕获
   const handleLastFrameCaptured = useCallback((nodeId, frameData) => {
@@ -526,10 +631,6 @@ const App = () => {
     setPendingConnection(null);
   }, [reactFlowInstance]);
 
-  const onNodeContextMenu = useCallback((event, node) => {
-    event.preventDefault();
-  }, []);
-
   const handleCloseContextMenu = useCallback(() => {
     setContextMenu({ visible: false, x: 0, y: 0, position: null });
     setPendingConnection(null);
@@ -659,6 +760,70 @@ const App = () => {
     });
   }, [setNodes]);
 
+  const handleSequenceChange = useCallback((nodeId, sequenceNumber) => {
+    if (!nodeId) return;
+
+    // 如果清空序号，直接允许
+    if (!sequenceNumber) {
+      setNodes((nds) => nds.map((node) => {
+        if (node.id !== nodeId) return node;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            sequenceNumber
+          }
+        };
+      }));
+
+      setSelectedNode((prev) => {
+        if (!prev || prev.id !== nodeId) return prev;
+        return {
+          ...prev,
+          data: {
+            ...prev.data,
+            sequenceNumber
+          }
+        };
+      });
+      return;
+    }
+
+    // 检查序号是否与其他节点重复
+    const currentNodes = nodesRef.current;
+    const duplicateNode = currentNodes.find(
+      (node) => node.id !== nodeId && node.data?.sequenceNumber === sequenceNumber
+    );
+
+    if (duplicateNode) {
+      const duplicateNodeLabel = duplicateNode.data?.label || duplicateNode.id?.slice(-6) || '未知节点';
+      alert(`序号 ${sequenceNumber} 已被节点 "${duplicateNodeLabel}" 使用，请使用其他序号`);
+      return;
+    }
+
+    setNodes((nds) => nds.map((node) => {
+      if (node.id !== nodeId) return node;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          sequenceNumber
+        }
+      };
+    }));
+
+    setSelectedNode((prev) => {
+      if (!prev || prev.id !== nodeId) return prev;
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          sequenceNumber
+        }
+      };
+    });
+  }, [setNodes]);
+
   const handleNodeImageSelect = useCallback((nodeId, file) => {
     if (!nodeId || !file) return;
 
@@ -767,13 +932,11 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
 
   // 2. 处理输入源（图片或视频）
   let imageBase64 = '';
-  let sourceType = 'image'; // 'image' 或 'video'
 
   try {
     if (imageInput.isVideoSource) {
       // 如果是视频源，提取最后一帧
       console.log('从视频源提取最后一帧...');
-      sourceType = 'video';
       const videoFrameDataUrl = await extractVideoFrame(imageInput.preview);
       // 移除 data:image/jpeg;base64, 前缀
       imageBase64 = videoFrameDataUrl.split(',')[1];
@@ -927,7 +1090,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
   }, [setEdges, handleDisconnectEdge]);
 
   // 连接线开始拖拽
-  const onConnectStart = useCallback((event, params) => {
+  const onConnectStart = useCallback((_event, params) => {
     const { nodeId, handleId, handleType } = params || {};
     if (!nodeId || !handleType) return;
     setConnectStartPos({ nodeId, handleId, handleType });
@@ -990,7 +1153,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
     }, 10);
   }, [connectStartPos, reactFlowInstance, nodes, reactFlowWrapper]);
 
-  const onNodeClick = useCallback((event, node) => {
+  const onNodeClick = useCallback((_event, node) => {
     setSelectedNode(node);
   }, []);
 
@@ -1019,11 +1182,11 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
 
   // 节点类型定义 - 使用 useMemo 优化性能
   const nodeTypes = useMemo(() => ({
-    'image-gen': (props) => <AINode {...props} onDelete={handleDeleteNode} onDisconnectAllEdges={handleDisconnectNodeEdges} onResize={handleResizeNode} onModelChange={handleNodeModelChange} onTextChange={handleNodeTextChange} onImageSelect={handleNodeImageSelect} onVideoSelect={handleNodeVideoSelect} onSendRequest={handleSendNodeRequest} onLastFrameCaptured={handleLastFrameCaptured} />,
-    'video-gen': (props) => <AINode {...props} onDelete={handleDeleteNode} onDisconnectAllEdges={handleDisconnectNodeEdges} onResize={handleResizeNode} onModelChange={handleNodeModelChange} onTextChange={handleNodeTextChange} onImageSelect={handleNodeImageSelect} onVideoSelect={handleNodeVideoSelect} onSendRequest={handleSendNodeRequest} onLastFrameCaptured={handleLastFrameCaptured} />,
-    'image-input': (props) => <AINode {...props} onDelete={handleDeleteNode} onDisconnectAllEdges={handleDisconnectNodeEdges} onResize={handleResizeNode} onModelChange={handleNodeModelChange} onTextChange={handleNodeTextChange} onImageSelect={handleNodeImageSelect} onVideoSelect={handleNodeVideoSelect} onSendRequest={handleSendNodeRequest} onLastFrameCaptured={handleLastFrameCaptured} />,
-    'video-input': (props) => <AINode {...props} onDelete={handleDeleteNode} onDisconnectAllEdges={handleDisconnectNodeEdges} onResize={handleResizeNode} onModelChange={handleNodeModelChange} onTextChange={handleNodeTextChange} onImageSelect={handleNodeImageSelect} onVideoSelect={handleNodeVideoSelect} onSendRequest={handleSendNodeRequest} onLastFrameCaptured={handleLastFrameCaptured} />,
-  }), [handleDeleteNode, handleDisconnectNodeEdges, handleResizeNode, handleNodeModelChange, handleNodeTextChange, handleNodeImageSelect, handleNodeVideoSelect, handleSendNodeRequest, handleLastFrameCaptured]);
+    'image-gen': (props) => <AINode {...props} onDelete={handleDeleteNode} onDisconnectAllEdges={handleDisconnectNodeEdges} onResize={handleResizeNode} onModelChange={handleNodeModelChange} onTextChange={handleNodeTextChange} onImageSelect={handleNodeImageSelect} onVideoSelect={handleNodeVideoSelect} onSendRequest={handleSendNodeRequest} onLastFrameCaptured={handleLastFrameCaptured} onSequenceChange={handleSequenceChange} />,
+    'video-gen': (props) => <AINode {...props} onDelete={handleDeleteNode} onDisconnectAllEdges={handleDisconnectNodeEdges} onResize={handleResizeNode} onModelChange={handleNodeModelChange} onTextChange={handleNodeTextChange} onImageSelect={handleNodeImageSelect} onVideoSelect={handleNodeVideoSelect} onSendRequest={handleSendNodeRequest} onLastFrameCaptured={handleLastFrameCaptured} onSequenceChange={handleSequenceChange} />,
+    'image-input': (props) => <AINode {...props} onDelete={handleDeleteNode} onDisconnectAllEdges={handleDisconnectNodeEdges} onResize={handleResizeNode} onModelChange={handleNodeModelChange} onTextChange={handleNodeTextChange} onImageSelect={handleNodeImageSelect} onVideoSelect={handleNodeVideoSelect} onSendRequest={handleSendNodeRequest} onLastFrameCaptured={handleLastFrameCaptured} onSequenceChange={handleSequenceChange} />,
+    'video-input': (props) => <AINode {...props} onDelete={handleDeleteNode} onDisconnectAllEdges={handleDisconnectNodeEdges} onResize={handleResizeNode} onModelChange={handleNodeModelChange} onTextChange={handleNodeTextChange} onImageSelect={handleNodeImageSelect} onVideoSelect={handleNodeVideoSelect} onSendRequest={handleSendNodeRequest} onLastFrameCaptured={handleLastFrameCaptured} onSequenceChange={handleSequenceChange} />,
+  }), [handleDeleteNode, handleDisconnectNodeEdges, handleResizeNode, handleNodeModelChange, handleNodeTextChange, handleNodeImageSelect, handleNodeVideoSelect, handleSendNodeRequest, handleLastFrameCaptured, handleSequenceChange]);
 
   const edgeTypes = useMemo(() => ({
     disconnectable: DisconnectableEdge
@@ -1039,7 +1202,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
   }, [setNodes]);
 
   const handleClearCanvas = useCallback(() => {
-    if (window.confirm('确定要清空画布吗？')) {
+    if (window.confirm('确定要清空画布吗？\n注意：这将清除所有节点和连接线。')) {
       setNodes([]);
       setEdges([]);
       setSelectedNode(null);
@@ -1047,10 +1210,73 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
     }
   }, [setNodes, setEdges, handleCloseContextMenu]);
 
+  const handleSaveToFile = useCallback(async () => {
+    console.log('点击保存按钮');
+    if (nodes.length === 0 && edges.length === 0) {
+      alert('画布为空，无需保存');
+      return;
+    }
+
+    const filePath = saveFilePath || `ai-workflow-${new Date().toISOString().slice(0, 10)}.json`;
+    console.log('准备保存到文件:', filePath);
+
+    try {
+      const savedPath = await saveDataToFile(nodes, edges, filePath);
+      console.log('保存完成，返回路径:', savedPath);
+      if (savedPath) {
+        setSaveFilePath(savedPath);
+        setLastSaveTime(new Date());
+      }
+    } catch (error) {
+      console.error('保存过程出错:', error);
+      alert(`保存失败: ${error.message}`);
+    }
+  }, [nodes, edges, saveFilePath]);
+
+  const handleLoadFromFile = useCallback(async (event) => {
+    const data = await loadDataFromFile(event);
+    if (data) {
+      if (data.nodes && data.nodes.length > 0) {
+        setNodes(data.nodes);
+      }
+      if (data.edges && data.edges.length > 0) {
+        setEdges(data.edges);
+      }
+
+      // 记录文件路径和时间
+      if (data.filePath) {
+        setSaveFilePath(data.filePath);
+      }
+      if (data.timestamp) {
+        const savedTime = new Date(data.timestamp);
+        const timeStr = savedTime.toLocaleString('zh-CN');
+        console.log(`已加载文件 (${timeStr})`);
+      }
+      handleCloseContextMenu();
+    }
+    // 重置文件输入框
+    if (event.target) {
+      event.target.value = '';
+    }
+  }, [setNodes, setEdges, handleCloseContextMenu]);
+
+  const handleOpenFileDialog = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
   return (
     <div style={globalStyles.appContainer}>
       <NodePalette onDragStart={onDragStart} />
-      
+
+      {/* 隐藏的文件输入框 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json"
+        style={{ display: 'none' }}
+        onChange={handleLoadFromFile}
+      />
+
       <div style={canvasStyles.wrapper} ref={reactFlowWrapper}>
         <ReactFlow
           nodes={nodes}
@@ -1064,7 +1290,6 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
           onSelectionChange={onSelectionChange}
           onPaneClick={onPaneClick}
           onPaneContextMenu={onPaneContextMenu}
-          onNodeContextMenu={onNodeContextMenu}
           onDrop={onDrop}
           onDragOver={onDragOver}
           onInit={setReactFlowInstance}
@@ -1082,7 +1307,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
           />
           <Controls />
           <Background color="#eaeef2" gap={16} />
-          
+
           <Panel position="top-left" style={canvasStyles.panel}>
             <div style={canvasStyles.buttonGroup}>
               <button
@@ -1097,6 +1322,23 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
               >
                 🗑️ 清空画布
               </button>
+              <button
+                onClick={handleSaveToFile}
+                style={canvasStyles.secondaryButton}
+              >
+                💾 保存文件
+              </button>
+              <button
+                onClick={handleOpenFileDialog}
+                style={canvasStyles.secondaryButton}
+              >
+                📂 打开文件
+              </button>
+              {lastSaveTime && (
+                <div style={canvasStyles.autoSaveIndicator}>
+                  🔄 自动保存: {saveFilePath}
+                </div>
+              )}
             </div>
           </Panel>
 
@@ -1108,7 +1350,8 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
                 从左侧拖拽节点开始构建工作流<br/>
                 直接拖拽图片或视频到画布生成输入节点<br/>
                 右键点击画布快速创建节点<br/>
-                <span style={canvasStyles.emptyStateHighlight}>点击节点右上角 ✕ 删除 | 选中后按 Delete 键删除</span>
+                点击"💾 保存文件"保存当前工作流<br/>
+                点击"📂 打开文件"加载已保存的工作流
               </p>
             </Panel>
           )}

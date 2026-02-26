@@ -18,7 +18,8 @@ const AINode = ({
   onImageSelect,
   onVideoSelect,
   onSendRequest,
-  onLastFrameCaptured
+  onLastFrameCaptured,
+  onSequenceChange
 }) => {
   const nodeRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -89,6 +90,14 @@ const AINode = ({
     if (!onTextChange) return;
     onTextChange(id, event.target.value);
   }, [id, onTextChange]);
+
+  const handleSequenceChange = useCallback((event) => {
+    if (!onSequenceChange) return;
+    const value = event.target.value;
+    // 只允许数字输入
+    const numericValue = value === '' ? '' : Math.max(1, parseInt(value, 10) || 1);
+    onSequenceChange(id, numericValue);
+  }, [id, onSequenceChange]);
 
   const handleOpenFilePicker = useCallback((event) => {
     event.preventDefault();
@@ -202,6 +211,44 @@ const AINode = ({
     >
       <div style={nodeStyles.header(nodeColor)}>
         {nodeHeaderLabelMap[nodeType] || (data.type || 'AI NODE')}
+      </div>
+
+      {/* 序号输入框 */}
+      <div style={{
+        position: 'absolute',
+        top: 26,
+        right: 30,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        zIndex: 5,
+        backgroundColor: `${nodeColor}15`,
+        padding: '3px 6px',
+        borderRadius: 4,
+        border: `1px solid ${nodeColor}40`
+      }}>
+        <span style={{ fontSize: 10, color: colors.text.light, fontWeight: 600 }}>序号:</span>
+        <input
+          type="number"
+          className="nodrag nopan"
+          value={data.sequenceNumber || ''}
+          onChange={handleSequenceChange}
+          onMouseDown={(event) => event.stopPropagation()}
+          style={{
+            width: '45px',
+            padding: '1px 4px',
+            fontSize: 11,
+            fontWeight: 600,
+            borderRadius: 2,
+            border: `1px solid ${colors.border.default}`,
+            outline: 'none',
+            backgroundColor: 'white',
+            color: colors.text.primary,
+            textAlign: 'center'
+          }}
+          min="1"
+          placeholder="-"
+        />
       </div>
 
       <div

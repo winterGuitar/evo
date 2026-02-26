@@ -694,6 +694,19 @@ export const canvasStyles = {
   emptyStateHighlight: {
     color: colors.status.error,
     fontWeight: 600
+  },
+
+  autoSaveIndicator: {
+    padding: '6px 12px',
+    fontSize: '11px',
+    fontWeight: 500,
+    color: colors.text.light,
+    backgroundColor: `${colors.status.running}15`,
+    borderRadius: '6px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    border: `1px solid ${colors.status.running}30`
   }
 };
 
