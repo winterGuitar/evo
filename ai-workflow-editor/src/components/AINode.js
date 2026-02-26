@@ -36,6 +36,14 @@ const AINode = ({
   const inputPreviews = Array.isArray(data.inputPreviews)
     ? data.inputPreviews.filter((item) => item?.preview)
     : [];
+  const formatDisplayName = useCallback((name, maxChars = 6) => {
+    if (!name || typeof name !== 'string') return name || '';
+    const chars = Array.from(name);
+    if (chars.length <= maxChars) return name;
+    return `${chars.slice(0, maxChars).join('')}...`;
+  }, []);
+  const displayLabel = formatDisplayName(data.label || 'Untitled Node');
+  const displayFileName = formatDisplayName(data.fileName || '');
 
   const handleDelete = useCallback((event) => {
     event.preventDefault();
@@ -224,7 +232,7 @@ const AINode = ({
       <div style={{
         position: 'absolute',
         top: 26,
-        right: 30,
+        right: 8,
         display: 'flex',
         alignItems: 'center',
         gap: '4px',
@@ -243,7 +251,7 @@ const AINode = ({
           onBlur={handleSequenceBlur}
           onMouseDown={(event) => event.stopPropagation()}
           style={{
-            width: '45px',
+            width: '30px',
             padding: '1px 4px',
             fontSize: 11,
             fontWeight: 600,
@@ -282,8 +290,11 @@ const AINode = ({
       <div style={{ display: 'flex', alignItems: 'center', marginTop: 8, marginBottom: 10 }}>
         <div style={nodeStyles.iconContainer(nodeColor)}>{getNodeIcon(data.type)}</div>
         <div>
-          <div style={{ fontWeight: 600, fontSize: 15, color: colors.text.primary }}>
-            {data.label || 'Untitled Node'}
+          <div
+            style={{ fontWeight: 600, fontSize: 15, color: colors.text.primary }}
+            title={data.label || 'Untitled Node'}
+          >
+            {displayLabel}
           </div>
           <div style={{ fontSize: 11, color: colors.text.light, marginTop: 2 }}>
             ID: {id?.slice(-6) || data.id?.slice(-6) || 'new'}
@@ -393,7 +404,9 @@ const AINode = ({
             <div style={nodeStyles.previewPlaceholder}>No image yet</div>
           )}
           {nodeType !== 'image-input' && (
-            <div style={nodeStyles.previewFooter}>{data.fileName || previewFooterText}</div>
+            <div style={nodeStyles.previewFooter} title={data.fileName || previewFooterText}>
+              {data.fileName ? displayFileName : previewFooterText}
+            </div>
           )}
         </div>
       )}
