@@ -215,11 +215,12 @@ const App = () => {
 
   // 自动保存相关状态
   const [saveFilePath, setSaveFilePath] = useState(null);
+  const [saveFileHandle, setSaveFileHandle] = useState(null); // 保存文件句柄，用于覆盖保存
   const [lastSaveTime, setLastSaveTime] = useState(null);
   const autoSaveTimerRef = useRef(null);
 
   // 使用自定义 Hooks
-  const { saveDataToFile, loadDataFromFile } = useFileStorage();
+  const { saveDataToFileWithCustomPath, saveToExistingFile, loadDataFromFile } = useFileStorage();
 
   // 计算视频时间轴项目（视频输入节点和视频生成节点，按序号排序）
   const timelineItems = useMemo(() => {
@@ -1067,6 +1068,8 @@ const App = () => {
       setNodes([]);
       setEdges([]);
       setSelectedNode(null);
+      setSaveFilePath(null);
+      setSaveFileHandle(null);
       handleCloseContextMenu();
     }
   }, [setNodes, setEdges, handleCloseContextMenu, attachDisconnectHandlers]);
@@ -1077,9 +1080,6 @@ const App = () => {
       alert('画布为空，无需保存');
       return;
     }
-
-    const filePath = saveFilePath || `ai-workflow-${new Date().toISOString().slice(0, 10)}.json`;
-    console.log('准备保存到文件:', filePath);
 
     // 准备时间轴数据
     const timelineData = {
@@ -1098,7 +1098,25 @@ const App = () => {
     console.log('保存时间轴数据:', timelineData);
 
     try {
-      const savedPath = await saveDataToFile(nodes, edges, filePath, timelineData);
+      let savedPath;
+
+      if (saveFileHandle) {
+        // 有文件句柄，直接覆盖保存
+        console.log('覆盖保存到现有文件:', saveFilePath);
+        const result = await saveToExistingFile(nodes, edges, saveFileHandle, timelineData);
+        if (result) {
+          savedPath = result.fileName;
+        }
+      } else {
+        // 没有文件句柄，使用文件选择器
+        console.log('使用文件选择器保存');
+        const result = await saveDataToFileWithCustomPath(nodes, edges, timelineData);
+        if (result) {
+          savedPath = result.fileName;
+          setSaveFileHandle(result.fileHandle);
+        }
+      }
+
       console.log('保存完成，返回路径:', savedPath);
       if (savedPath) {
         setSaveFilePath(savedPath);
@@ -1108,7 +1126,47 @@ const App = () => {
       console.error('保存过程出错:', error);
       alert(`保存失败: ${error.message}`);
     }
-  }, [nodes, edges, saveFilePath, timelineItems, selectedTimelineItems, composedVideoServerPath, saveDataToFile]);
+  }, [nodes, edges, saveFilePath, saveFileHandle, timelineItems, selectedTimelineItems, composedVideoServerPath, saveToExistingFile, saveDataToFileWithCustomPath]);
+
+  // 使用文件选择器指定位置和名称保存
+  const handleSaveToCustomPath = useCallback(async () => {
+    console.log('点击另存为按钮');
+    if (nodes.length === 0 && edges.length === 0) {
+      alert('画布为空，无需保存');
+      return;
+    }
+
+    console.log('准备使用文件选择器保存');
+
+    // 准备时间轴数据
+    const timelineData = {
+      items: timelineItems.map(item => ({
+        id: item.id,
+        type: item.type,
+        sequenceNumber: item.sequenceNumber,
+        label: item.label,
+        preview: item.preview, // 保存引用路径
+        fileName: item.fileName
+      })),
+      selectedItems: selectedTimelineItems,
+      // 保存合成视频相对路径
+      composedVideoUrl: composedVideoServerPath || ''
+    };
+    console.log('保存时间轴数据:', timelineData);
+
+    try {
+      const result = await saveDataToFileWithCustomPath(nodes, edges, timelineData);
+      if (result) {
+        setSaveFilePath(result.fileName);
+        setSaveFileHandle(result.fileHandle);
+        setLastSaveTime(new Date());
+        console.log('保存完成，返回路径:', result.fileName);
+      }
+    } catch (error) {
+      console.error('保存过程出错:', error);
+      alert(`保存失败: ${error.message}`);
+    }
+  }, [nodes, edges, timelineItems, selectedTimelineItems, composedVideoServerPath, saveDataToFileWithCustomPath]);
 
   const handleLoadFromFile = useCallback(async (event) => {
     const data = await loadDataFromFile(event);
@@ -1168,6 +1226,10 @@ const App = () => {
         const timeStr = savedTime.toLocaleString('zh-CN');
         console.log(`已加载文件 (${timeStr})`);
       }
+
+      // 加载文件后清空 FileHandle，因为加载的文件不是通过 FileHandle 选择的
+      setSaveFileHandle(null);
+
       handleCloseContextMenu();
     }
     // 重置文件输入框
@@ -1257,7 +1319,13 @@ const App = () => {
                 onClick={handleSaveToFile}
                 style={canvasStyles.secondaryButton}
               >
-                💾 保存文件
+                💾 保存
+              </button>
+              <button
+                onClick={handleSaveToCustomPath}
+                style={canvasStyles.secondaryButton}
+              >
+                💾 另存为
               </button>
               <button
                 onClick={handleOpenFileDialog}

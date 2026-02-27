@@ -153,3 +153,57 @@ export const updateNodesStatus = (nodes, status) => {
     data: { ...node.data, status }
   }));
 };
+
+// ========== File hash calculation ==========
+/**
+ * 计算文件的 SHA-256 哈希值
+ * @param {File} file - 文件对象
+ * @returns {Promise<string>} - 返回 SHA-256 哈希值（十六进制字符串）
+ */
+export const calculateFileHash = async (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const arrayBuffer = e.target.result;
+        const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        resolve(hashHex);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+};
+
+/**
+ * 检查后端是否已存在相同文件
+ * @param {string} hash - 文件的 MD5 哈希值
+ * @param {number} size - 文件大小（字节）
+ * @returns {Promise<{exists: boolean, path?: string}>}
+ */
+export const checkFileExists = async (hash, size) => {
+  try {
+    const response = await fetch('http://localhost:3001/api/ti2v/check-exist', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ hash, size }),
+    });
+    const data = await response.json();
+    if (data.code === 0) {
+      return {
+        exists: data.data.exists,
+        path: data.data.path
+      };
+    }
+    return { exists: false };
+  } catch (error) {
+    console.error('检查文件是否存在失败:', error);
+    return { exists: false };
+  }
+};

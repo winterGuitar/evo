@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { isValidImageFile, isValidVideoFile, getImageLabelFromFileName, getVideoLabelFromFileName } from '../utils';
+import { isValidImageFile, isValidVideoFile, getImageLabelFromFileName, getVideoLabelFromFileName, calculateFileHash, checkFileExists } from '../utils';
 
 /**
  * 节点操作 Hook
@@ -18,33 +18,56 @@ export const useNodeOperations = () => {
     }
 
     const imageLabel = getImageLabelFromFileName(file.name);
+    console.log('开始处理图片文件:', file.name, `大小: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
 
-    // 上传文件到服务器
     let serverPath = '';
+    let isReused = false;
+
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const uploadRes = await fetch('http://localhost:3001/api/ti2v/upload', {
-        method: 'POST',
-        body: formData
-      });
-      const uploadData = await uploadRes.json();
-      if (uploadData.code === 0) {
-        serverPath = uploadData.data.path;
-        console.log('图片上传成功，服务器路径:', serverPath);
+      // 计算文件哈希
+      console.log('正在计算文件哈希...');
+      const fileHash = await calculateFileHash(file);
+      console.log('文件哈希:', fileHash);
+
+      // 检查后端是否已存在相同文件
+      console.log('检查后端是否已存在相同文件...');
+      const checkResult = await checkFileExists(fileHash, file.size);
+
+      if (checkResult.exists && checkResult.path) {
+        // 文件已存在，复用
+        serverPath = checkResult.path;
+        isReused = true;
+        console.log('文件已存在，复用文件:', serverPath);
       } else {
-        console.error('图片上传失败:', uploadData.message);
-        alert('图片上传失败: ' + uploadData.message);
-        return;
+        // 文件不存在，上传新文件
+        console.log('文件不存在，开始上传...');
+        const formData = new FormData();
+        formData.append('file', file);
+        const uploadRes = await fetch('http://localhost:3001/api/ti2v/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadData.code === 0) {
+          serverPath = uploadData.data.path;
+          console.log('图片上传成功，服务器路径:', serverPath);
+        } else {
+          console.error('图片上传失败:', uploadData.message);
+          alert('图片上传失败: ' + uploadData.message);
+          return;
+        }
       }
     } catch (e) {
-      console.error('上传图片到服务器失败:', e);
-      alert('上传图片失败，请检查后端服务是否运行');
+      console.error('处理图片文件失败:', e);
+      alert('处理图片失败，请检查后端服务是否运行');
       return;
     }
 
     // 使用服务器路径作为预览
     const previewUrl = `http://localhost:3001${serverPath}`;
+    const description = isReused
+      ? `图片输入: ${file.name} (已复用)`
+      : `图片输入: ${file.name}`;
 
     setNodes((nds) => nds.map((node) => {
       if (node.id !== nodeId) return node;
@@ -53,7 +76,7 @@ export const useNodeOperations = () => {
         data: {
           ...node.data,
           label: imageLabel,
-          description: `图片输入: ${file.name}`,
+          description,
           preview: previewUrl,
           fileName: file.name,
           fileSize: file.size,
@@ -70,7 +93,7 @@ export const useNodeOperations = () => {
         data: {
           ...prev.data,
           label: imageLabel,
-          description: `图片输入: ${file.name}`,
+          description,
           preview: previewUrl,
           fileName: file.name,
           fileSize: file.size,
@@ -79,6 +102,13 @@ export const useNodeOperations = () => {
         }
       };
     });
+
+    // 提示用户
+    if (isReused) {
+      console.log('图片已成功复用，未重复上传');
+    } else {
+      console.log('图片已成功上传');
+    }
   }, []);
 
   /**
@@ -93,33 +123,56 @@ export const useNodeOperations = () => {
     }
 
     const videoLabel = getVideoLabelFromFileName(file.name);
+    console.log('开始处理视频文件:', file.name, `大小: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
 
-    // 上传文件到服务器
     let serverPath = '';
+    let isReused = false;
+
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const uploadRes = await fetch('http://localhost:3001/api/ti2v/upload', {
-        method: 'POST',
-        body: formData
-      });
-      const uploadData = await uploadRes.json();
-      if (uploadData.code === 0) {
-        serverPath = uploadData.data.path;
-        console.log('视频上传成功，服务器路径:', serverPath);
+      // 计算文件哈希
+      console.log('正在计算文件哈希...');
+      const fileHash = await calculateFileHash(file);
+      console.log('文件哈希:', fileHash);
+
+      // 检查后端是否已存在相同文件
+      console.log('检查后端是否已存在相同文件...');
+      const checkResult = await checkFileExists(fileHash, file.size);
+
+      if (checkResult.exists && checkResult.path) {
+        // 文件已存在，复用
+        serverPath = checkResult.path;
+        isReused = true;
+        console.log('文件已存在，复用文件:', serverPath);
       } else {
-        console.error('视频上传失败:', uploadData.message);
-        alert('视频上传失败: ' + uploadData.message);
-        return;
+        // 文件不存在，上传新文件
+        console.log('文件不存在，开始上传...');
+        const formData = new FormData();
+        formData.append('file', file);
+        const uploadRes = await fetch('http://localhost:3001/api/ti2v/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadData.code === 0) {
+          serverPath = uploadData.data.path;
+          console.log('视频上传成功，服务器路径:', serverPath);
+        } else {
+          console.error('视频上传失败:', uploadData.message);
+          alert('视频上传失败: ' + uploadData.message);
+          return;
+        }
       }
     } catch (e) {
-      console.error('上传视频到服务器失败:', e);
-      alert('上传视频失败，请检查后端服务是否运行');
+      console.error('处理视频文件失败:', e);
+      alert('处理视频失败，请检查后端服务是否运行');
       return;
     }
 
     // 使用服务器路径
     const videoUrl = `http://localhost:3001${serverPath}`;
+    const description = isReused
+      ? `视频输入: ${file.name} (已复用)`
+      : `视频输入: ${file.name}`;
 
     setNodes((nds) => nds.map((node) => {
       if (node.id !== nodeId) return node;
@@ -128,7 +181,7 @@ export const useNodeOperations = () => {
         data: {
           ...node.data,
           label: videoLabel,
-          description: `视频输入: ${file.name}`,
+          description,
           preview: videoUrl,
           videoUrl,
           fileName: file.name,
@@ -145,7 +198,7 @@ export const useNodeOperations = () => {
         data: {
           ...prev.data,
           label: videoLabel,
-          description: `视频输入: ${file.name}`,
+          description,
           preview: videoUrl,
           videoUrl,
           fileName: file.name,
@@ -154,6 +207,13 @@ export const useNodeOperations = () => {
         }
       };
     });
+
+    // 提示用户
+    if (isReused) {
+      console.log('视频已成功复用，未重复上传');
+    } else {
+      console.log('视频已成功上传');
+    }
   }, []);
 
   /**

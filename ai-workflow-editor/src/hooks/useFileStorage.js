@@ -82,6 +82,125 @@ export const useFileStorage = () => {
   }, [processNodesForSave]);
 
   /**
+   * 保存数据到文件（使用文件选择器指定位置和名称）
+   * 返回 { fileName, fileHandle }
+   */
+  const saveDataToFileWithCustomPath = useCallback(async (nodes, edges, timelineData = null) => {
+    try {
+      console.log('开始保存文件，节点数量:', nodes.length);
+
+      // 处理节点数据
+      const processedNodes = await processNodesForSave(nodes);
+      console.log('节点数据处理完成');
+
+      const data = {
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        nodes: processedNodes,
+        edges,
+        timeline: timelineData,
+      };
+      const jsonString = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+
+      // 检查文件大小
+      const fileSizeMB = blob.size / (1024 * 1024);
+      if (fileSizeMB > 50) {
+        console.warn(`文件大小较大: ${fileSizeMB.toFixed(2)}MB，可能需要较长时间保存`);
+      }
+
+      // 使用 showSaveFilePicker API（支持指定保存位置和文件名）
+      try {
+        const fileHandle = await window.showSaveFilePicker({
+          suggestedName: `ai-workflow-${new Date().toISOString().slice(0, 10)}.json`,
+          types: [
+            {
+              description: 'JSON 文件',
+              accept: {
+                'application/json': ['.json'],
+              },
+            },
+          ],
+        });
+
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+
+        console.log('文件已保存:', fileHandle.name, `(${fileSizeMB.toFixed(2)}MB)`);
+        return { fileName: fileHandle.name, fileHandle };
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          console.log('用户取消保存');
+          return null;
+        }
+
+        // 如果 showSaveFilePicker 不可用，回退到默认方式
+        console.warn('showSaveFilePicker 不可用，使用默认保存方式:', err.message);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ai-workflow-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log('文件已保存:', a.download, `(${fileSizeMB.toFixed(2)}MB)`);
+        return { fileName: a.download, fileHandle: null };
+      }
+    } catch (error) {
+      console.error('保存文件失败:', error);
+      alert(`保存文件失败: ${error.message}`);
+      return null;
+    }
+  }, [processNodesForSave]);
+
+  /**
+   * 覆盖保存到已有文件（使用 FileHandle）
+   */
+  const saveToExistingFile = useCallback(async (nodes, edges, fileHandle, timelineData = null) => {
+    try {
+      if (!fileHandle) {
+        throw new Error('文件句柄不存在');
+      }
+
+      console.log('开始覆盖保存文件，节点数量:', nodes.length);
+
+      // 处理节点数据
+      const processedNodes = await processNodesForSave(nodes);
+      console.log('节点数据处理完成');
+
+      const data = {
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        nodes: processedNodes,
+        edges,
+        timeline: timelineData,
+      };
+      const jsonString = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+
+      // 检查文件大小
+      const fileSizeMB = blob.size / (1024 * 1024);
+      if (fileSizeMB > 50) {
+        console.warn(`文件大小较大: ${fileSizeMB.toFixed(2)}MB，可能需要较长时间保存`);
+      }
+
+      // 使用 FileHandle 覆盖文件
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+
+      console.log('文件已覆盖保存:', fileHandle.name, `(${fileSizeMB.toFixed(2)}MB)`);
+      return { fileName: fileHandle.name, fileHandle };
+    } catch (error) {
+      console.error('覆盖保存文件失败:', error);
+      alert(`保存失败: ${error.message}`);
+      return null;
+    }
+  }, [processNodesForSave]);
+
+  /**
    * 从文件加载数据
    */
   const loadDataFromFile = useCallback(async (event) => {
@@ -113,6 +232,8 @@ export const useFileStorage = () => {
   return {
     processNodesForSave,
     saveDataToFile,
+    saveDataToFileWithCustomPath,
+    saveToExistingFile,
     loadDataFromFile,
   };
 };
