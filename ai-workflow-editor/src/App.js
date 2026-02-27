@@ -34,137 +34,19 @@ import {
   isValidImageFile,
   isValidVideoFile,
   updateNodesStatus,
-  getImageLabelFromFileName,
-  getVideoLabelFromFileName
 } from './utils';
+
+// 导入自定义 Hooks
+import { useFileStorage } from './hooks/useFileStorage';
+import { useTimeline } from './hooks/useTimeline';
+import { useNodeOperations } from './hooks/useNodeOperations';
 
 // ========== 抑制 ResizeObserver 警告 ==========
 suppressResizeObserverWarning();
 
 // ========== File Storage Helpers ==========
-
-// 递归处理节点数据，保存服务器相对路径
-const processNodesForSave = async (nodes) => {
-  return nodes.map((node) => {
-    const processedNode = { ...node };
-    if (processedNode.data) {
-      const data = { ...processedNode.data };
-
-      // 保存服务器相对路径（如 /ti2v_videos/xxx.mp4）
-      if (data.serverPath) {
-        data.preview = data.serverPath;
-        data.videoUrl = data.serverPath;
-      } else if (data.preview?.startsWith('http://localhost:3001/')) {
-        // 如果是完整URL，转换为相对路径
-        data.preview = data.preview.replace('http://localhost:3001', '');
-        data.videoUrl = data.videoUrl?.replace('http://localhost:3001', '') || data.preview;
-      }
-
-      // lastFrame 清空
-      if (data.lastFrame) {
-        data.lastFrame = '';
-      }
-
-      processedNode.data = data;
-    }
-    return processedNode;
-  });
-};
-
-const saveDataToFile = async (nodes, edges, filePath = null, timelineData = null) => {
-  try {
-    console.log('开始保存文件，节点数量:', nodes.length);
-
-    // 将所有 blob URL 转换为 base64
-    const processedNodes = await processNodesForSave(nodes);
-    console.log('节点数据处理完成');
-
-    const data = {
-      version: '1.0',
-      timestamp: new Date().toISOString(),
-      nodes: processedNodes,
-      edges,
-      timeline: timelineData,
-      filePath // 保存文件路径元数据
-    };
-    const jsonString = JSON.stringify(data, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-
-    // 检查文件大小
-    const fileSizeMB = blob.size / (1024 * 1024);
-    if (fileSizeMB > 50) {
-      console.warn(`文件大小较大: ${fileSizeMB.toFixed(2)}MB，可能需要较长时间保存`);
-    }
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    // 如果有指定路径则使用该路径，否则生成新文件名
-    a.download = filePath || `ai-workflow-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    console.log('文件已保存:', a.download, `(${fileSizeMB.toFixed(2)}MB)`);
-    return a.download;
-  } catch (error) {
-    console.error('保存文件失败:', error);
-    alert(`保存文件失败: ${error.message}`);
-    return null;
-  }
-};
-
-const loadDataFromFile = (event) => {
-  return new Promise((resolve, reject) => {
-    const file = event.target.files[0];
-    if (!file) {
-      resolve(null);
-      return;
-    }
-
-    if (!file.name.endsWith('.json')) {
-      alert('请选择 .json 格式的工作流文件');
-      resolve(null);
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = JSON.parse(e.target.result);
-        if (!data.nodes || !Array.isArray(data.nodes)) {
-          alert('无效的工作流文件格式');
-          resolve(null);
-          return;
-        }
-
-        // 检查节点数据
-        console.log('加载的节点数量:', data.nodes.length);
-        data.nodes.forEach((node, index) => {
-          console.log(`节点 ${index + 1} (${node.id}):`, {
-            type: node.type,
-            hasData: !!node.data,
-            hasPreview: !!node.data?.preview,
-            previewType: node.data?.preview?.startsWith('data:') ? 'base64' : 'url',
-            hasVideoUrl: !!node.data?.videoUrl,
-            hasLastFrame: !!node.data?.lastFrame
-          });
-        });
-
-        resolve(data);
-      } catch (error) {
-        console.error('解析文件失败:', error);
-        alert('文件解析失败，请检查文件格式');
-        resolve(null);
-      }
-    };
-    reader.onerror = () => {
-      alert('文件读取失败');
-      reject(new Error('文件读取失败'));
-    };
-    reader.readAsText(file);
-  });
-};
+// 这些函数已迁移到 useFileStorage Hook 中 (src/hooks/useFileStorage.js)
+// const { saveDataToFile, loadDataFromFile } = useFileStorage();
 
 const areInputPreviewListsEqual = (prevList, nextList) => {
   if (prevList === nextList) return true;
@@ -336,30 +218,8 @@ const App = () => {
   const [lastSaveTime, setLastSaveTime] = useState(null);
   const autoSaveTimerRef = useRef(null);
 
-  // 视频时间轴相关状态
-  const [selectedTimelineItems, setSelectedTimelineItems] = useState([]);
-  const [isTimelineCollapsed, setIsTimelineCollapsed] = useState(false);
-  const [composedVideoUrl, setComposedVideoUrl] = useState('');
-  const [composedVideoServerPath, setComposedVideoServerPath] = useState('');
-  const [composeProgress, setComposeProgress] = useState({ current: 0, total: 0, isComposing: false });
-  const composedVideoUrlRef = useRef('');
-
-  const imageInputPreviewVersion = useMemo(() => {
-    return nodes
-      .filter((node) => ['image-input', 'video-input', 'video-gen', 'image-gen'].includes(node.type))
-      .map((node) => {
-        let content = '';
-        if (node.type === 'image-input') {
-          content = node.data?.preview || '';
-        } else if (node.type === 'video-input' || node.type === 'video-gen') {
-          content = node.data?.lastFrame || '';
-        } else if (node.type === 'image-gen') {
-          content = node.data?.preview || '';
-        }
-        return `${node.id}:${content}:${node.data?.fileName || ''}`;
-      })
-      .join('|');
-  }, [nodes]);
+  // 使用自定义 Hooks
+  const { saveDataToFile, loadDataFromFile } = useFileStorage();
 
   // 计算视频时间轴项目（视频输入节点和视频生成节点，按序号排序）
   const timelineItems = useMemo(() => {
@@ -383,6 +243,47 @@ const App = () => {
         preview: node.data.preview || node.data.lastFrame,
         fileName: node.data.fileName
       }));
+  }, [nodes]);
+
+  const {
+    selectedTimelineItems,
+    setSelectedTimelineItems,
+    isTimelineCollapsed,
+    setIsTimelineCollapsed,
+    composedVideoUrl,
+    setComposedVideoUrl,
+    composedVideoServerPath,
+    setComposedVideoServerPath,
+    composeProgress,
+    handleTimelineItemClick,
+    handleSelectAllTimeline,
+    handleClearTimelineSelection,
+    handleComposeVideo,
+  } = useTimeline(timelineItems);
+
+  const {
+    handleNodeImageSelect,
+    handleNodeVideoSelect,
+    handleDeleteNode,
+  } = useNodeOperations();
+
+  const composedVideoUrlRef = useRef('');
+
+  const imageInputPreviewVersion = useMemo(() => {
+    return nodes
+      .filter((node) => ['image-input', 'video-input', 'video-gen', 'image-gen'].includes(node.type))
+      .map((node) => {
+        let content = '';
+        if (node.type === 'image-input') {
+          content = node.data?.preview || '';
+        } else if (node.type === 'video-input' || node.type === 'video-gen') {
+          content = node.data?.lastFrame || '';
+        } else if (node.type === 'image-gen') {
+          content = node.data?.preview || '';
+        }
+        return `${node.id}:${content}:${node.data?.fileName || ''}`;
+      })
+      .join('|');
   }, [nodes]);
 
   useEffect(() => {
@@ -491,21 +392,6 @@ const App = () => {
     }));
   }, [setNodes]);
 
-  // 删除节点函数
-  const handleDeleteNode = useCallback((nodeId) => {
-    if (!nodeId) {
-      console.error('节点ID为空，无法删除');
-      return;
-    }
-
-    setNodes((nds) => nds.filter(node => node.id !== nodeId));
-    setEdges((eds) => eds.filter(edge => 
-      edge.source !== nodeId && edge.target !== nodeId
-    ));
-    
-    setSelectedNode((prev) => (prev?.id === nodeId ? null : prev));
-  }, [setNodes, setEdges]);
-
   // 键盘删除快捷键
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -517,14 +403,14 @@ const App = () => {
       if (e.key === 'Delete' && selectedNode) {
         e.preventDefault();
         if (window.confirm(`确定要删除节点 "${selectedNode.data.label || selectedNode.id}" 吗？`)) {
-          handleDeleteNode(selectedNode.id);
+          handleDeleteNode(selectedNode.id, setNodes, setEdges, setSelectedNode);
         }
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNode, handleDeleteNode]);
+  }, [selectedNode, handleDeleteNode, setNodes, setEdges, setSelectedNode]);
 
   const onDragStart = (event, nodeType) => {
     event.dataTransfer.setData('application/reactflow', JSON.stringify(nodeType));
@@ -821,315 +707,171 @@ const App = () => {
     });
   }, [setNodes]);
 
-  const handleNodeImageSelect = useCallback(async (nodeId, file) => {
-    if (!nodeId || !file) return;
+  // 节点操作相关处理函数已迁移到 useNodeOperations Hook 中 (src/hooks/useNodeOperations.js)
 
-    if (!isValidImageFile(file)) {
-      alert('请选择有效的图片文件（jpg/png/gif/webp/svg）');
+  // App.js 中替换 handleSendNodeRequest 函数
+  const handleSendNodeRequest = useCallback(async (nodeId) => {
+    if (!nodeId) return;
+
+    const currentNodes = nodesRef.current;
+    const targetNode = currentNodes.find((node) => node.id === nodeId);
+    if (!targetNode || !['image-gen', 'video-gen'].includes(targetNode.type)) {
       return;
     }
 
-    const imageLabel = getImageLabelFromFileName(file.name);
+    // 1. 准备请求参数（从节点数据中获取）
+    const { inputText: prompt, inputPreviews = [] } = targetNode.data;
+    const imageInput = inputPreviews[0]; // 取第一个关联的输入节点
+    if (!imageInput?.preview) {
+      alert("请先关联图片或视频输入节点！");
+      return;
+    }
 
-    // 上传文件到服务器
-    let serverPath = '';
+    // 2. 处理输入源（图片或视频）
+    let imageBase64 = '';
+
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const uploadRes = await fetch('http://localhost:3001/api/ti2v/upload', {
-        method: 'POST',
-        body: formData
-      });
-      const uploadData = await uploadRes.json();
-      if (uploadData.code === 0) {
-        serverPath = uploadData.data.path;
-        console.log('图片上传成功，服务器路径:', serverPath);
+      if (imageInput.isVideoSource) {
+        // 如果是视频源，提取最后一帧
+        console.log('从视频源提取最后一帧...');
+        const videoFrameDataUrl = await extractVideoFrame(imageInput.preview);
+        // 移除 data:image/jpeg;base64, 前缀
+        imageBase64 = videoFrameDataUrl.split(',')[1];
+        console.log('视频帧提取成功');
       } else {
-        console.error('图片上传失败:', uploadData.message);
-        alert('图片上传失败: ' + uploadData.message);
-        return;
-      }
-    } catch (e) {
-      console.error('上传图片到服务器失败:', e);
-      alert('上传图片失败，请检查后端服务是否运行');
-      return;
-    }
-
-    // 使用服务器路径作为预览
-    const previewUrl = `http://localhost:3001${serverPath}`;
-
-    setNodes((nds) => nds.map((node) => {
-      if (node.id !== nodeId) return node;
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          label: imageLabel,
-          description: `图片输入: ${file.name}`,
-          preview: previewUrl,
-          fileName: file.name,
-          fileSize: file.size,
-          imageUrl: '',
-          serverPath // 保存服务器相对路径
-        }
-      };
-    }));
-
-    setSelectedNode((prev) => {
-      if (!prev || prev.id !== nodeId) return prev;
-      return {
-        ...prev,
-        data: {
-          ...prev.data,
-          label: imageLabel,
-          description: `图片输入: ${file.name}`,
-          preview: previewUrl,
-          fileName: file.name,
-          fileSize: file.size,
-          imageUrl: '',
-          serverPath
-        }
-      };
-    });
-  }, [setNodes]);
-
-  const handleNodeVideoSelect = useCallback(async (nodeId, file) => {
-    if (!nodeId || !file) return;
-
-    if (!isValidVideoFile(file)) {
-      alert('请选择有效的视频文件（mp4/webm/ogg/mov/avi/mkv）');
-      return;
-    }
-
-    const videoLabel = getVideoLabelFromFileName(file.name);
-
-    // 上传文件到服务器
-    let serverPath = '';
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const uploadRes = await fetch('http://localhost:3001/api/ti2v/upload', {
-        method: 'POST',
-        body: formData
-      });
-      const uploadData = await uploadRes.json();
-      if (uploadData.code === 0) {
-        serverPath = uploadData.data.path;
-        console.log('视频上传成功，服务器路径:', serverPath);
-      } else {
-        console.error('视频上传失败:', uploadData.message);
-        alert('视频上传失败: ' + uploadData.message);
-        return;
-      }
-    } catch (e) {
-      console.error('上传视频到服务器失败:', e);
-      alert('上传视频失败，请检查后端服务是否运行');
-      return;
-    }
-
-    // 使用服务器路径
-    const videoUrl = `http://localhost:3001${serverPath}`;
-
-    setNodes((nds) => nds.map((node) => {
-      if (node.id !== nodeId) return node;
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          label: videoLabel,
-          description: `视频输入: ${file.name}`,
-          preview: videoUrl,
-          videoUrl,
-          fileName: file.name,
-          fileSize: file.size,
-          serverPath // 保存服务器相对路径
-        }
-      };
-    }));
-
-    setSelectedNode((prev) => {
-      if (!prev || prev.id !== nodeId) return prev;
-      return {
-        ...prev,
-        data: {
-          ...prev.data,
-          label: videoLabel,
-          description: `视频输入: ${file.name}`,
-          preview: videoUrl,
-          videoUrl,
-          fileName: file.name,
-          fileSize: file.size,
-          serverPath
-        }
-      };
-    });
-  }, [setNodes]);
-
-// App.js 中替换 handleSendNodeRequest 函数
-const handleSendNodeRequest = useCallback(async (nodeId) => {
-  if (!nodeId) return;
-
-  const currentNodes = nodesRef.current;
-  const targetNode = currentNodes.find((node) => node.id === nodeId);
-  if (!targetNode || !['image-gen', 'video-gen'].includes(targetNode.type)) {
-    return;
-  }
-
-  // 1. 准备请求参数（从节点数据中获取）
-  const { inputText: prompt, inputPreviews = [] } = targetNode.data;
-  const imageInput = inputPreviews[0]; // 取第一个关联的输入节点
-  if (!imageInput?.preview) {
-    alert("请先关联图片或视频输入节点！");
-    return;
-  }
-
-  // 2. 处理输入源（图片或视频）
-  let imageBase64 = '';
-
-  try {
-    if (imageInput.isVideoSource) {
-      // 如果是视频源，提取最后一帧
-      console.log('从视频源提取最后一帧...');
-      const videoFrameDataUrl = await extractVideoFrame(imageInput.preview);
-      // 移除 data:image/jpeg;base64, 前缀
-      imageBase64 = videoFrameDataUrl.split(',')[1];
-      console.log('视频帧提取成功');
-    } else {
-      // 如果是图片源，直接使用
-      if (imageInput.preview.startsWith('data:image/')) {
-        imageBase64 = imageInput.preview.split(',')[1]; // 移除data:image/xxx;base64,前缀
-      } else if (imageInput.preview.startsWith('blob:')) {
-        // 如果是blob URL，先转换为Base64
-        const response = await fetch(imageInput.preview);
-        const blob = await response.blob();
-        const reader = new FileReader();
-        await new Promise((resolve) => {
-          reader.onload = resolve;
-          reader.readAsDataURL(blob);
-        });
-        imageBase64 = reader.result.split(',')[1];
-      }
-    }
-
-    if (!imageBase64) {
-      throw new Error('无法获取图片数据');
-    }
-  } catch (error) {
-    alert(`处理输入源失败：${error.message}`);
-    console.error('处理输入源失败:', error);
-    return;
-  }
-
-  // 3. 更新节点状态为"运行中"
-  setNodeDataById(targetNode.id, {
-    status: 'running',
-    lastRequestError: '',
-    preview: '', // 清空旧预览
-    fileName: ''
-  });
-
-  try {
-    if (targetNode.type === 'video-gen') {
-      // ========== 视频生成逻辑 ==========
-      console.log('提交视频生成任务...');
-      // 4. 调用后端"提交任务"接口
-      const submitRes = await fetch('http://localhost:3001/api/ti2v/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64,
-          prompt,
-          seed: 12345,
-          frames: 121,
-          aspect_ratio: "16:9"
-        })
-      });
-      const submitData = await submitRes.json();
-
-      if (submitData.code !== 0) {
-        throw new Error(submitData.message || '任务提交失败');
-      }
-      const { taskId } = submitData.data;
-      console.log("任务提交成功，taskId：", taskId);
-
-      // 5. 循环查询任务状态（模拟原queryTaskLoop逻辑）
-      const queryTask = async () => {
-        const queryRes = await fetch('http://localhost:3001/api/ti2v/query', {
-            method: 'POST', // 必须和服务端app.post匹配
-            headers: { 'Content-Type': 'application/json' }, // 必须传Content-Type
-            body: JSON.stringify({ taskId }) // taskId放在请求体里
+        // 如果是图片源，直接使用
+        if (imageInput.preview.startsWith('data:image/')) {
+          imageBase64 = imageInput.preview.split(',')[1]; // 移除data:image/xxx;base64,前缀
+        } else if (imageInput.preview.startsWith('blob:')) {
+          // 如果是blob URL，先转换为Base64
+          const response = await fetch(imageInput.preview);
+          const blob = await response.blob();
+          const reader = new FileReader();
+          await new Promise((resolve) => {
+            reader.onload = resolve;
+            reader.readAsDataURL(blob);
           });
-          const queryData = await queryRes.json();
+          imageBase64 = reader.result.split(',')[1];
+        }
+      }
 
-          if (queryData.code !== 0) {
-            throw new Error(queryData.message || '任务查询失败');
-          }
-
-          const { taskStatus, videoUrl, localVideoPath, errorMsg } = queryData.data;
-          console.log("任务状态：", taskStatus);
-
-          switch (taskStatus) {
-            case "done":
-              // 任务完成：优先使用后端返回的本地访问地址 localVideoPath，否则使用远程 videoUrl
-              {
-                const displayUrl = localVideoPath || videoUrl || '';
-                const fileNameFromUrl = displayUrl ? displayUrl.split('/').pop() : `生成视频_${taskId}.mp4`;
-                setNodeDataById(targetNode.id, {
-                  status: 'completed',
-                  preview: displayUrl, // 用于节点展示（本地访问地址或远程URL）
-                  videoUrl: displayUrl, // 兼容性字段，保持 videoUrl 存储实际可访问地址
-                  fileName: fileNameFromUrl,
-                  taskId
-                });
-              }
-              alert("视频生成成功！");
-              break;
-            case "failed":
-              throw new Error(errorMsg || '任务执行失败');
-            case "timeout":
-              throw new Error('任务执行超时');
-            case "in_queue":
-            case "running":
-              // 继续查询
-              setTimeout(queryTask, 5000);
-              break;
-            default:
-              setTimeout(queryTask, 5000);
-          }
-        };
-      queryTask();
-    } else if (targetNode.type === 'image-gen') {
-      // ========== 图片生成逻辑 ==========
-      console.log('提交图片生成任务...');
-      // TODO: 这里应该调用图片生成API
-      // 目前只是模拟生成成功
-      
-      // 模拟API调用延迟
-      setTimeout(() => {
-        // 创建一个模拟的图片（使用输入的图片本身作为示例）
-        const resultImageBase64 = imageBase64;
-        
-        setNodeDataById(targetNode.id, {
-          status: 'completed',
-          preview: `data:image/jpeg;base64,${resultImageBase64}`,
-          fileName: '生成图片.jpg'
-        });
-        
-        alert('图片生成成功！（模拟）');
-        console.log('图片生成任务完成');
-      }, 2000);
+      if (!imageBase64) {
+        throw new Error('无法获取图片数据');
+      }
+    } catch (error) {
+      alert(`处理输入源失败：${error.message}`);
+      console.error('处理输入源失败:', error);
+      return;
     }
-  } catch (error) {
-    // 6. 处理错误
-    setNodeDataById(targetNode.id, {
-      status: 'error',
-      lastRequestError: error.message
-    });
-    alert(`${targetNode.type === 'video-gen' ? '视频' : '图片'}生成失败：${error.message}`);
-  }
-}, [setNodeDataById]);
 
-  
+    // 3. 更新节点状态为"运行中"
+    setNodeDataById(targetNode.id, {
+      status: 'running',
+      lastRequestError: '',
+      preview: '', // 清空旧预览
+      fileName: ''
+    });
+
+    try {
+      if (targetNode.type === 'video-gen') {
+        // ========== 视频生成逻辑 ==========
+        console.log('提交视频生成任务...');
+        // 4. 调用后端"提交任务"接口
+        const submitRes = await fetch('http://localhost:3001/api/ti2v/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageBase64,
+            prompt,
+            seed: 12345,
+            frames: 121,
+            aspect_ratio: "16:9"
+          })
+        });
+        const submitData = await submitRes.json();
+
+        if (submitData.code !== 0) {
+          throw new Error(submitData.message || '任务提交失败');
+        }
+        const { taskId } = submitData.data;
+        console.log("任务提交成功，taskId：", taskId);
+
+        // 5. 循环查询任务状态（模拟原queryTaskLoop逻辑）
+        const queryTask = async () => {
+          const queryRes = await fetch('http://localhost:3001/api/ti2v/query', {
+              method: 'POST', // 必须和服务端app.post匹配
+              headers: { 'Content-Type': 'application/json' }, // 必须传Content-Type
+              body: JSON.stringify({ taskId }) // taskId放在请求体里
+            });
+            const queryData = await queryRes.json();
+
+            if (queryData.code !== 0) {
+              throw new Error(queryData.message || '任务查询失败');
+            }
+
+            const { taskStatus, videoUrl, localVideoPath, errorMsg } = queryData.data;
+            console.log("任务状态：", taskStatus);
+
+            switch (taskStatus) {
+              case "done":
+                // 任务完成：优先使用后端返回的本地访问地址 localVideoPath，否则使用远程 videoUrl
+                {
+                  const displayUrl = localVideoPath || videoUrl || '';
+                  const fileNameFromUrl = displayUrl ? displayUrl.split('/').pop() : `生成视频_${taskId}.mp4`;
+                  setNodeDataById(targetNode.id, {
+                    status: 'completed',
+                    preview: displayUrl, // 用于节点展示（本地访问地址或远程URL）
+                    videoUrl: displayUrl, // 兼容性字段，保持 videoUrl 存储实际可访问地址
+                    fileName: fileNameFromUrl,
+                    taskId
+                  });
+                }
+                alert("视频生成成功！");
+                break;
+              case "failed":
+                throw new Error(errorMsg || '任务执行失败');
+              case "timeout":
+                throw new Error('任务执行超时');
+              case "in_queue":
+              case "running":
+                // 继续查询
+                setTimeout(queryTask, 5000);
+                break;
+              default:
+                setTimeout(queryTask, 5000);
+            }
+          };
+        queryTask();
+      } else if (targetNode.type === 'image-gen') {
+        // ========== 图片生成逻辑 ==========
+        console.log('提交图片生成任务...');
+        // TODO: 这里应该调用图片生成API
+        // 目前只是模拟生成成功
+
+        // 模拟API调用延迟
+        setTimeout(() => {
+          // 创建一个模拟的图片（使用输入的图片本身作为示例）
+          const resultImageBase64 = imageBase64;
+
+          setNodeDataById(targetNode.id, {
+            status: 'completed',
+            preview: `data:image/jpeg;base64,${resultImageBase64}`,
+            fileName: '生成图片.jpg'
+          });
+
+          alert('图片生成成功！（模拟）');
+          console.log('图片生成任务完成');
+        }, 2000);
+      }
+    } catch (error) {
+      // 6. 处理错误
+      setNodeDataById(targetNode.id, {
+        status: 'error',
+        lastRequestError: error.message
+      });
+      alert(`${targetNode.type === 'video-gen' ? '视频' : '图片'}生成失败：${error.message}`);
+    }
+  }, [setNodeDataById]);
 
   const onConnect = useCallback((params) => {
     edgesCountRef.current = 1;
@@ -1235,11 +977,55 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
 
   // 节点类型定义 - 使用 useMemo 优化性能
   const nodeTypes = useMemo(() => ({
-    'image-gen': (props) => <AINode {...props} onDelete={handleDeleteNode} onDisconnectAllEdges={handleDisconnectNodeEdges} onResize={handleResizeNode} onModelChange={handleNodeModelChange} onTextChange={handleNodeTextChange} onImageSelect={handleNodeImageSelect} onVideoSelect={handleNodeVideoSelect} onSendRequest={handleSendNodeRequest} onLastFrameCaptured={handleLastFrameCaptured} onSequenceChange={handleSequenceChange} />,
-    'video-gen': (props) => <AINode {...props} onDelete={handleDeleteNode} onDisconnectAllEdges={handleDisconnectNodeEdges} onResize={handleResizeNode} onModelChange={handleNodeModelChange} onTextChange={handleNodeTextChange} onImageSelect={handleNodeImageSelect} onVideoSelect={handleNodeVideoSelect} onSendRequest={handleSendNodeRequest} onLastFrameCaptured={handleLastFrameCaptured} onSequenceChange={handleSequenceChange} />,
-    'image-input': (props) => <AINode {...props} onDelete={handleDeleteNode} onDisconnectAllEdges={handleDisconnectNodeEdges} onResize={handleResizeNode} onModelChange={handleNodeModelChange} onTextChange={handleNodeTextChange} onImageSelect={handleNodeImageSelect} onVideoSelect={handleNodeVideoSelect} onSendRequest={handleSendNodeRequest} onLastFrameCaptured={handleLastFrameCaptured} onSequenceChange={handleSequenceChange} />,
-    'video-input': (props) => <AINode {...props} onDelete={handleDeleteNode} onDisconnectAllEdges={handleDisconnectNodeEdges} onResize={handleResizeNode} onModelChange={handleNodeModelChange} onTextChange={handleNodeTextChange} onImageSelect={handleNodeImageSelect} onVideoSelect={handleNodeVideoSelect} onSendRequest={handleSendNodeRequest} onLastFrameCaptured={handleLastFrameCaptured} onSequenceChange={handleSequenceChange} />,
-  }), [handleDeleteNode, handleDisconnectNodeEdges, handleResizeNode, handleNodeModelChange, handleNodeTextChange, handleNodeImageSelect, handleNodeVideoSelect, handleSendNodeRequest, handleLastFrameCaptured, handleSequenceChange]);
+    'image-gen': (props) => <AINode {...props}
+      onDelete={(nodeId) => handleDeleteNode(nodeId, setNodes, setEdges, setSelectedNode)}
+      onDisconnectAllEdges={handleDisconnectNodeEdges}
+      onResize={handleResizeNode}
+      onModelChange={handleNodeModelChange}
+      onTextChange={handleNodeTextChange}
+      onImageSelect={(nodeId, file) => handleNodeImageSelect(nodeId, file, setNodes, setSelectedNode)}
+      onVideoSelect={(nodeId, file) => handleNodeVideoSelect(nodeId, file, setNodes, setSelectedNode)}
+      onSendRequest={handleSendNodeRequest}
+      onLastFrameCaptured={handleLastFrameCaptured}
+      onSequenceChange={handleSequenceChange}
+    />,
+    'video-gen': (props) => <AINode {...props}
+      onDelete={(nodeId) => handleDeleteNode(nodeId, setNodes, setEdges, setSelectedNode)}
+      onDisconnectAllEdges={handleDisconnectNodeEdges}
+      onResize={handleResizeNode}
+      onModelChange={handleNodeModelChange}
+      onTextChange={handleNodeTextChange}
+      onImageSelect={(nodeId, file) => handleNodeImageSelect(nodeId, file, setNodes, setSelectedNode)}
+      onVideoSelect={(nodeId, file) => handleNodeVideoSelect(nodeId, file, setNodes, setSelectedNode)}
+      onSendRequest={handleSendNodeRequest}
+      onLastFrameCaptured={handleLastFrameCaptured}
+      onSequenceChange={handleSequenceChange}
+    />,
+    'image-input': (props) => <AINode {...props}
+      onDelete={(nodeId) => handleDeleteNode(nodeId, setNodes, setEdges, setSelectedNode)}
+      onDisconnectAllEdges={handleDisconnectNodeEdges}
+      onResize={handleResizeNode}
+      onModelChange={handleNodeModelChange}
+      onTextChange={handleNodeTextChange}
+      onImageSelect={(nodeId, file) => handleNodeImageSelect(nodeId, file, setNodes, setSelectedNode)}
+      onVideoSelect={(nodeId, file) => handleNodeVideoSelect(nodeId, file, setNodes, setSelectedNode)}
+      onSendRequest={handleSendNodeRequest}
+      onLastFrameCaptured={handleLastFrameCaptured}
+      onSequenceChange={handleSequenceChange}
+    />,
+    'video-input': (props) => <AINode {...props}
+      onDelete={(nodeId) => handleDeleteNode(nodeId, setNodes, setEdges, setSelectedNode)}
+      onDisconnectAllEdges={handleDisconnectNodeEdges}
+      onResize={handleResizeNode}
+      onModelChange={handleNodeModelChange}
+      onTextChange={handleNodeTextChange}
+      onImageSelect={(nodeId, file) => handleNodeImageSelect(nodeId, file, setNodes, setSelectedNode)}
+      onVideoSelect={(nodeId, file) => handleNodeVideoSelect(nodeId, file, setNodes, setSelectedNode)}
+      onSendRequest={handleSendNodeRequest}
+      onLastFrameCaptured={handleLastFrameCaptured}
+      onSequenceChange={handleSequenceChange}
+    />,
+  }), [handleDeleteNode, handleDisconnectNodeEdges, handleResizeNode, handleNodeModelChange, handleNodeTextChange, handleNodeImageSelect, handleNodeVideoSelect, handleSendNodeRequest, handleLastFrameCaptured, handleSequenceChange, setNodes, setEdges, setSelectedNode]);
 
   const edgeTypes = useMemo(() => ({
     disconnectable: DisconnectableEdge
@@ -1300,7 +1086,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
       console.error('保存过程出错:', error);
       alert(`保存失败: ${error.message}`);
     }
-  }, [nodes, edges, saveFilePath, timelineItems, selectedTimelineItems, composedVideoUrl]);
+  }, [nodes, edges, saveFilePath, timelineItems, selectedTimelineItems, composedVideoServerPath, saveDataToFile]);
 
   const handleLoadFromFile = useCallback(async (event) => {
     const data = await loadDataFromFile(event);
@@ -1372,197 +1158,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
     fileInputRef.current?.click();
   }, []);
 
-  // 时间轴相关处理函数
-  const handleTimelineItemClick = useCallback((itemId) => {
-    if (selectedTimelineItems.includes(itemId)) {
-      setSelectedTimelineItems((prev) => prev.filter((id) => id !== itemId));
-    } else {
-      setSelectedTimelineItems((prev) => [...prev, itemId]);
-    }
-  }, [selectedTimelineItems]);
-
-  const handleSelectAllTimeline = useCallback(() => {
-    const allIds = timelineItems.map((item) => item.id);
-    setSelectedTimelineItems(allIds);
-  }, [timelineItems]);
-
-  const handleClearTimelineSelection = useCallback(() => {
-    setSelectedTimelineItems([]);
-  }, []);
-
-  const handleComposeVideo = useCallback(async () => {
-    if (selectedTimelineItems.length < 2) {
-      alert('请至少选择 2 个视频节点进行合成');
-      return;
-    }
-
-    // 按序号排序选中的节点
-    const sortedItems = timelineItems
-      .filter((item) => selectedTimelineItems.includes(item.id))
-      .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
-
-    const selectedUrls = sortedItems.map((item) => item.preview);
-    const selectedSequenceNumbers = sortedItems.map((item) => item.sequenceNumber);
-
-    console.log('开始合成视频，顺序:', selectedSequenceNumbers);
-    console.log('视频URLs:', selectedUrls);
-
-    // 前端本地视频合成
-    try {
-      // 初始化进度
-      setComposeProgress({ current: 0, total: selectedUrls.length, isComposing: true });
-
-      // 使用 MediaRecorder API 在浏览器中合并视频
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-
-      // 加载所有视频
-      const videoElements = [];
-      for (const url of selectedUrls) {
-        const video = document.createElement('video');
-        video.src = url;
-        video.crossOrigin = 'anonymous';
-        video.muted = true;
-
-        await new Promise((resolve) => {
-          video.onloadedmetadata = () => {
-            console.log('视频加载完成:', url);
-            resolve();
-          };
-          video.onerror = (e) => {
-            console.error('视频加载失败:', url, e);
-            resolve(); // 即使失败也继续
-          };
-          // 设置超时
-          setTimeout(() => {
-            console.warn('视频加载超时:', url);
-            resolve();
-          }, 10000);
-        });
-
-        videoElements.push(video);
-      }
-
-      // 更新进度：开始合成
-      setComposeProgress({ current: 0, total: videoElements.length, isComposing: true });
-
-      // 设置画布尺寸（使用第一个视频的尺寸）
-      const firstVideo = videoElements[0];
-      const canvasWidth = firstVideo.videoWidth || 1280;
-      const canvasHeight = firstVideo.videoHeight || 720;
-      canvas.width = canvasWidth;
-      canvas.height = canvasHeight;
-      console.log('画布尺寸:', canvasWidth, 'x', canvasHeight);
-
-      // 检查 MediaRecorder 支持的格式
-      let mimeType = 'video/webm;codecs=vp9';
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'video/webm;codecs=vp8';
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = 'video/webm';
-        }
-      }
-      console.log('使用媒体格式:', mimeType);
-
-      // 创建 MediaRecorder
-      const stream = canvas.captureStream(30); // 30 FPS
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType,
-        videoBitsPerSecond: 5000000 // 5 Mbps
-      });
-
-      const chunks = [];
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: mimeType });
-
-        // 上传合成视频到服务器
-        let serverUrl = '';
-        let serverPath = '';
-        try {
-          const formData = new FormData();
-          formData.append('file', blob, `composed_video_${Date.now()}.webm`);
-          const uploadRes = await fetch('http://localhost:3001/api/ti2v/upload', {
-            method: 'POST',
-            body: formData
-          });
-          const uploadData = await uploadRes.json();
-          if (uploadData.code === 0) {
-            serverPath = uploadData.data.path;
-            serverUrl = `http://localhost:3001${serverPath}`;
-            console.log('合成视频上传成功，服务器路径:', serverPath);
-          } else {
-            console.error('合成视频上传失败:', uploadData.message);
-          }
-        } catch (e) {
-          console.error('上传合成视频失败:', e);
-        }
-
-        // 保存服务器路径，用于保存文件时使用
-        setComposedVideoServerPath(serverPath);
-        setComposedVideoUrl(serverUrl || URL.createObjectURL(blob));
-        setComposeProgress({ current: videoElements.length, total: videoElements.length, isComposing: false });
-
-        // 如果上传成功，显示服务器URL；否则下载本地文件
-        if (serverUrl) {
-          alert(`视频合成成功！\n合成序号: ${selectedSequenceNumbers.join(', ')}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB\n已保存到服务器`);
-        } else {
-          const localUrl = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = localUrl;
-          a.download = `composed_video_${Date.now()}.webm`;
-          a.click();
-          alert(`视频合成成功！\n合成序号: ${selectedSequenceNumbers.join(', ')}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
-        }
-      };
-
-      mediaRecorder.start();
-      console.log('MediaRecorder 已启动');
-
-      // 依次播放并绘制每个视频到画布
-      for (let i = 0; i < videoElements.length; i++) {
-        const video = videoElements[i];
-        console.log(`正在处理第 ${i + 1}/${videoElements.length} 个视频`);
-
-        // 更新进度
-        setComposeProgress(prev => ({ ...prev, current: i + 1 }));
-
-        await new Promise((resolve) => {
-          video.currentTime = 0;
-          video.onended = resolve;
-
-          const drawFrame = () => {
-            ctx.drawImage(video, 0, 0, canvasWidth, canvasHeight);
-            if (!video.ended) {
-              requestAnimationFrame(drawFrame);
-            }
-          };
-
-          video.play().then(() => {
-            drawFrame();
-          }).catch((e) => {
-            console.error('视频播放失败:', e);
-            resolve();
-          });
-        });
-      }
-
-      // 等待一小段时间确保最后几帧被录制
-      await new Promise(r => setTimeout(r, 100));
-
-      mediaRecorder.stop();
-      console.log('MediaRecorder 已停止');
-    } catch (error) {
-      console.error('视频合成失败:', error);
-      setComposeProgress({ current: 0, total: 0, isComposing: false });
-      alert(`视频合成失败: ${error.message}\n请查看控制台获取详细信息`);
-    }
-  }, [selectedTimelineItems, timelineItems]);
+  // 时间轴相关处理函数已迁移到 useTimeline Hook 中 (src/hooks/useTimeline.js)
 
   return (
     <div style={globalStyles.appContainer}>
