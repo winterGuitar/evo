@@ -42,106 +42,36 @@ import {
 suppressResizeObserverWarning();
 
 // ========== File Storage Helpers ==========
-// 将 Blob URL 转换为 Base64
-const convertBlobToBase64 = async (blobUrl) => {
-  if (!blobUrl || typeof blobUrl !== 'string') {
-    return blobUrl; // 不是字符串，直接返回
-  }
 
-  // 如果已经是 data URL，直接返回
-  if (blobUrl.startsWith('data:')) {
-    return blobUrl;
-  }
-
-  // 如果是 blob URL，转换为 Base64（带超时）
-  if (blobUrl.startsWith('blob:')) {
-    try {
-      const response = await Promise.race([
-        fetch(blobUrl),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('fetch timeout')), 10000))
-      ]);
-      const blob = await response.blob();
-      const dataUrl = await Promise.race([
-        new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('readFileReader timeout')), 30000))
-      ]);
-      return dataUrl;
-    } catch (error) {
-      console.error('转换 Blob URL 失败:', error);
-      return blobUrl; // 转换失败返回原 URL
-    }
-  }
-
-  // 如果是本地服务器路径（/ti2v_videos/），尝试转换为完整 URL 后再转换（带超时）
-  if (blobUrl.startsWith('/ti2v_videos/') || blobUrl.startsWith('http://') || blobUrl.startsWith('https://')) {
-    const fullUrl = blobUrl.startsWith('http') ? blobUrl : `http://localhost:3001${blobUrl}`;
-    try {
-      console.log('尝试从服务器获取文件:', fullUrl);
-      const response = await Promise.race([
-        fetch(fullUrl),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('fetch timeout')), 10000))
-      ]);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const blob = await response.blob();
-      const dataUrl = await Promise.race([
-        new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('readFileReader timeout')), 60000)) // 视频文件可能较大，给60秒
-      ]);
-      return dataUrl;
-    } catch (error) {
-      console.error('获取服务器文件失败:', error);
-      return blobUrl; // 转换失败返回原 URL
-    }
-  }
-
-  // 其他情况直接返回原值
-  return blobUrl;
-};
-
-// 递归处理节点数据，将 blob URL 转换为 base64
+// 递归处理节点数据，保存服务器相对路径
 const processNodesForSave = async (nodes) => {
-  return Promise.all(nodes.map(async (node) => {
+  return nodes.map((node) => {
     const processedNode = { ...node };
     if (processedNode.data) {
       const data = { ...processedNode.data };
 
-      // 处理 preview（图片输入、视频输入、视频生成节点的预览）
-      if (data.preview) {
-        console.log(`处理节点 ${node.id} (${node.type}) 的 preview...`);
-        data.preview = await convertBlobToBase64(data.preview);
+      // 保存服务器相对路径（如 /ti2v_videos/xxx.mp4）
+      if (data.serverPath) {
+        data.preview = data.serverPath;
+        data.videoUrl = data.serverPath;
+      } else if (data.preview?.startsWith('http://localhost:3001/')) {
+        // 如果是完整URL，转换为相对路径
+        data.preview = data.preview.replace('http://localhost:3001', '');
+        data.videoUrl = data.videoUrl?.replace('http://localhost:3001', '') || data.preview;
       }
 
-      // 处理 videoUrl（视频输入节点的视频源）
-      if (data.videoUrl) {
-        console.log(`处理节点 ${node.id} 的 videoUrl...`);
-        data.videoUrl = await convertBlobToBase64(data.videoUrl);
-      }
-
-      // 处理 lastFrame（视频生成节点的最后一帧）
+      // lastFrame 清空
       if (data.lastFrame) {
-        console.log(`处理节点 ${node.id} 的 lastFrame...`);
-        data.lastFrame = await convertBlobToBase64(data.lastFrame);
+        data.lastFrame = '';
       }
 
       processedNode.data = data;
     }
     return processedNode;
-  }));
+  });
 };
 
-const saveDataToFile = async (nodes, edges, filePath = null) => {
+const saveDataToFile = async (nodes, edges, filePath = null, timelineData = null) => {
   try {
     console.log('开始保存文件，节点数量:', nodes.length);
 
@@ -154,6 +84,7 @@ const saveDataToFile = async (nodes, edges, filePath = null) => {
       timestamp: new Date().toISOString(),
       nodes: processedNodes,
       edges,
+      timeline: timelineData,
       filePath // 保存文件路径元数据
     };
     const jsonString = JSON.stringify(data, null, 2);
@@ -409,6 +340,7 @@ const App = () => {
   const [selectedTimelineItems, setSelectedTimelineItems] = useState([]);
   const [isTimelineCollapsed, setIsTimelineCollapsed] = useState(false);
   const [composedVideoUrl, setComposedVideoUrl] = useState('');
+  const [composedVideoServerPath, setComposedVideoServerPath] = useState('');
   const [composeProgress, setComposeProgress] = useState({ current: 0, total: 0, isComposing: false });
   const composedVideoUrlRef = useRef('');
 
@@ -889,7 +821,7 @@ const App = () => {
     });
   }, [setNodes]);
 
-  const handleNodeImageSelect = useCallback((nodeId, file) => {
+  const handleNodeImageSelect = useCallback(async (nodeId, file) => {
     if (!nodeId || !file) return;
 
     if (!isValidImageFile(file)) {
@@ -897,8 +829,34 @@ const App = () => {
       return;
     }
 
-    const previewUrl = URL.createObjectURL(file);
     const imageLabel = getImageLabelFromFileName(file.name);
+
+    // 上传文件到服务器
+    let serverPath = '';
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const uploadRes = await fetch('http://localhost:3001/api/ti2v/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const uploadData = await uploadRes.json();
+      if (uploadData.code === 0) {
+        serverPath = uploadData.data.path;
+        console.log('图片上传成功，服务器路径:', serverPath);
+      } else {
+        console.error('图片上传失败:', uploadData.message);
+        alert('图片上传失败: ' + uploadData.message);
+        return;
+      }
+    } catch (e) {
+      console.error('上传图片到服务器失败:', e);
+      alert('上传图片失败，请检查后端服务是否运行');
+      return;
+    }
+
+    // 使用服务器路径作为预览
+    const previewUrl = `http://localhost:3001${serverPath}`;
 
     setNodes((nds) => nds.map((node) => {
       if (node.id !== nodeId) return node;
@@ -911,7 +869,8 @@ const App = () => {
           preview: previewUrl,
           fileName: file.name,
           fileSize: file.size,
-          imageUrl: ''
+          imageUrl: '',
+          serverPath // 保存服务器相对路径
         }
       };
     }));
@@ -927,13 +886,14 @@ const App = () => {
           preview: previewUrl,
           fileName: file.name,
           fileSize: file.size,
-          imageUrl: ''
+          imageUrl: '',
+          serverPath
         }
       };
     });
   }, [setNodes]);
 
-  const handleNodeVideoSelect = useCallback((nodeId, file) => {
+  const handleNodeVideoSelect = useCallback(async (nodeId, file) => {
     if (!nodeId || !file) return;
 
     if (!isValidVideoFile(file)) {
@@ -941,8 +901,34 @@ const App = () => {
       return;
     }
 
-    const videoUrl = URL.createObjectURL(file);
     const videoLabel = getVideoLabelFromFileName(file.name);
+
+    // 上传文件到服务器
+    let serverPath = '';
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const uploadRes = await fetch('http://localhost:3001/api/ti2v/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const uploadData = await uploadRes.json();
+      if (uploadData.code === 0) {
+        serverPath = uploadData.data.path;
+        console.log('视频上传成功，服务器路径:', serverPath);
+      } else {
+        console.error('视频上传失败:', uploadData.message);
+        alert('视频上传失败: ' + uploadData.message);
+        return;
+      }
+    } catch (e) {
+      console.error('上传视频到服务器失败:', e);
+      alert('上传视频失败，请检查后端服务是否运行');
+      return;
+    }
+
+    // 使用服务器路径
+    const videoUrl = `http://localhost:3001${serverPath}`;
 
     setNodes((nds) => nds.map((node) => {
       if (node.id !== nodeId) return node;
@@ -955,7 +941,8 @@ const App = () => {
           preview: videoUrl,
           videoUrl,
           fileName: file.name,
-          fileSize: file.size
+          fileSize: file.size,
+          serverPath // 保存服务器相对路径
         }
       };
     }));
@@ -971,7 +958,8 @@ const App = () => {
           preview: videoUrl,
           videoUrl,
           fileName: file.name,
-          fileSize: file.size
+          fileSize: file.size,
+          serverPath
         }
       };
     });
@@ -1296,8 +1284,10 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
         fileName: item.fileName
       })),
       selectedItems: selectedTimelineItems,
-      composedVideoUrl: composedVideoUrl // 保存合成视频路径
+      // 保存合成视频相对路径
+      composedVideoUrl: composedVideoServerPath || ''
     };
+    console.log('保存时间轴数据:', timelineData);
 
     try {
       const savedPath = await saveDataToFile(nodes, edges, filePath, timelineData);
@@ -1316,34 +1306,26 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
     const data = await loadDataFromFile(event);
     if (data) {
       if (data.nodes && data.nodes.length > 0) {
-        // 处理节点数据，将 base64 转换为 Blob URL
-        const processedNodes = await Promise.all(data.nodes.map(async (node) => {
+        // 处理节点数据，将相对路径转换为完整 URL
+        const processedNodes = data.nodes.map((node) => {
           const processedNode = { ...node };
 
-          // 处理 preview（base64 转 Blob URL）
-          if (processedNode.data?.preview?.startsWith('data:')) {
-            try {
-              const blob = await fetch(processedNode.data.preview)
-                .then(res => res.blob());
-              processedNode.data.preview = URL.createObjectURL(blob);
-            } catch (e) {
-              console.error('转换 preview 失败:', e);
-            }
+          // 将相对路径转换为完整 URL
+          if (processedNode.data?.preview?.startsWith('/ti2v_videos/')) {
+            processedNode.data.preview = `http://localhost:3001${processedNode.data.preview}`;
+            processedNode.data.serverPath = processedNode.data.preview.replace('http://localhost:3001', '');
+          }
+          if (processedNode.data?.videoUrl?.startsWith('/ti2v_videos/')) {
+            processedNode.data.videoUrl = `http://localhost:3001${processedNode.data.videoUrl}`;
           }
 
-          // 处理 lastFrame（base64 转 Blob URL）
-          if (processedNode.data?.lastFrame?.startsWith('data:')) {
-            try {
-              const blob = await fetch(processedNode.data.lastFrame)
-                .then(res => res.blob());
-              processedNode.data.lastFrame = URL.createObjectURL(blob);
-            } catch (e) {
-              console.error('转换 lastFrame 失败:', e);
-            }
+          // 确保 position 存在
+          if (!processedNode.position) {
+            processedNode.position = { x: 0, y: 0 };
           }
 
           return processedNode;
-        }));
+        });
 
         setNodes(processedNodes);
       }
@@ -1353,11 +1335,19 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
 
       // 恢复时间轴数据
       if (data.timeline) {
+        console.log('加载时间轴数据:', data.timeline);
         if (data.timeline.selectedItems) {
           setSelectedTimelineItems(data.timeline.selectedItems);
         }
         if (data.timeline.composedVideoUrl) {
-          setComposedVideoUrl(data.timeline.composedVideoUrl);
+          console.log('恢复合成视频URL:', data.timeline.composedVideoUrl);
+          // 将相对路径转换为完整 URL
+          const composedUrl = data.timeline.composedVideoUrl.startsWith('/ti2v_videos/')
+            ? `http://localhost:3001${data.timeline.composedVideoUrl}`
+            : data.timeline.composedVideoUrl;
+          console.log('转换后的完整URL:', composedUrl);
+          setComposedVideoUrl(composedUrl);
+          setComposedVideoServerPath(data.timeline.composedVideoUrl);
         }
       }
 
@@ -1488,16 +1478,47 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
         }
       };
 
-      mediaRecorder.onstop = () => {
+      mediaRecorder.onstop = async () => {
         const blob = new Blob(chunks, { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        setComposedVideoUrl(url);
+
+        // 上传合成视频到服务器
+        let serverUrl = '';
+        let serverPath = '';
+        try {
+          const formData = new FormData();
+          formData.append('file', blob, `composed_video_${Date.now()}.webm`);
+          const uploadRes = await fetch('http://localhost:3001/api/ti2v/upload', {
+            method: 'POST',
+            body: formData
+          });
+          const uploadData = await uploadRes.json();
+          if (uploadData.code === 0) {
+            serverPath = uploadData.data.path;
+            serverUrl = `http://localhost:3001${serverPath}`;
+            console.log('合成视频上传成功，服务器路径:', serverPath);
+          } else {
+            console.error('合成视频上传失败:', uploadData.message);
+          }
+        } catch (e) {
+          console.error('上传合成视频失败:', e);
+        }
+
+        // 保存服务器路径，用于保存文件时使用
+        setComposedVideoServerPath(serverPath);
+        setComposedVideoUrl(serverUrl || URL.createObjectURL(blob));
         setComposeProgress({ current: videoElements.length, total: videoElements.length, isComposing: false });
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `composed_video_${Date.now()}.webm`;
-        a.click();
-        alert(`视频合成成功！\n合成序号: ${selectedSequenceNumbers.join(', ')}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+
+        // 如果上传成功，显示服务器URL；否则下载本地文件
+        if (serverUrl) {
+          alert(`视频合成成功！\n合成序号: ${selectedSequenceNumbers.join(', ')}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB\n已保存到服务器`);
+        } else {
+          const localUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = localUrl;
+          a.download = `composed_video_${Date.now()}.webm`;
+          a.click();
+          alert(`视频合成成功！\n合成序号: ${selectedSequenceNumbers.join(', ')}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+        }
       };
 
       mediaRecorder.start();
@@ -1758,7 +1779,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
                       #{item.sequenceNumber}
                     </div>
                     {item.preview && (
-                      item.type === 'video-gen' || item.preview.startsWith('blob:') ? (
+                      item.type === 'video-gen' || item.type === 'video-input' ? (
                         <video
                           src={item.preview}
                           muted
@@ -1767,6 +1788,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
                           playsInline
                           onMouseEnter={(e) => e.target.play()}
                           onMouseLeave={(e) => e.target.pause()}
+                          onClick={(e) => e.stopPropagation()}
                           style={{
                             width: '104px',
                             height: '64px',
@@ -1779,6 +1801,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
                         <img
                           src={item.preview}
                           alt={item.label}
+                          onClick={(e) => e.stopPropagation()}
                           style={{
                             width: '104px',
                             height: '64px',

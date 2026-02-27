@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const fsExtra = require('fs-extra');
+const multer = require('multer');
 
 // 动态导入 node-fetch（适配 Node.js v24+）
 const fetch = async (...args) => {
@@ -584,6 +585,64 @@ app.get('/api/ti2v/download', async (req, res) => {
     });
   }
 });
+
+/**
+ * 接口4：上传文件
+ * POST /api/ti2v/upload
+ * 响应：{ code: 0, data: { path: "/ti2v_videos/xxx.mp4" } }
+ */
+const upload = multer({
+  dest: BASE_CONFIG.downloadDir,
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, BASE_CONFIG.downloadDir);
+    },
+    filename: (req, file, cb) => {
+      // 生成唯一文件名：时间戳-随机字符串-原始文件名
+      const ext = path.extname(file.originalname);
+      const uniqueName = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${ext}`;
+      cb(null, uniqueName);
+    }
+  })
+}).single('file');
+
+app.post('/api/ti2v/upload', (req, res) => {
+  upload(req, res, (err) => {
+    if (err) {
+      return res.status(500).json({
+        code: -1,
+        message: `上传失败：${err.message}`,
+        data: null
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        code: -1,
+        message: "未找到上传文件",
+        data: null
+      });
+    }
+
+    // 返回相对路径（相对于服务器根目录）
+    const relativePath = `/ti2v_videos/${req.file.filename}`;
+    res.json({
+      code: 0,
+      message: "上传成功",
+      data: {
+        path: relativePath,
+        originalName: req.file.originalname,
+        size: req.file.size
+      }
+    });
+  });
+});
+
+/**
+ * 接口5：提供静态文件访问
+ * GET /ti2v_videos/*
+ */
+app.use('/ti2v_videos', express.static(BASE_CONFIG.downloadDir));
 
 /**
  * 健康检查接口
