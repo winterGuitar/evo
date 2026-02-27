@@ -2,7 +2,7 @@ import React from 'react';
 import { paletteStyles } from '../styles';
 import { NODE_PALETTE_CATEGORIES, getNodeColor } from '../constants';
 
-const NodePalette = ({ onDragStart }) => {
+const NodePalette = ({ onDragStart, composedVideoUrl }) => {
   return (
     <div style={paletteStyles.container}>
       <div style={paletteStyles.header}>
@@ -42,6 +42,23 @@ const NodePalette = ({ onDragStart }) => {
             ))}
           </div>
         ))}
+      </div>
+
+      {/* 合成视频展示框 */}
+      <div style={paletteStyles.composedVideoSection}>
+        <div style={paletteStyles.composedVideoTitle}>🎥 合成视频</div>
+        {composedVideoUrl ? (
+          <video
+            src={composedVideoUrl}
+            controls
+            style={paletteStyles.composedVideo}
+          />
+        ) : (
+          <div style={paletteStyles.composedVideoEmpty}>
+            <div style={paletteStyles.composedVideoEmptyIcon}>📹</div>
+            <div style={paletteStyles.composedVideoEmptyText}>暂无合成视频</div>
+          </div>
+        )}
       </div>
     </div>
   );

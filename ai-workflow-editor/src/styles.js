@@ -599,6 +599,52 @@ export const paletteStyles = {
     fontSize: 12,
     color: colors.text.light,
     lineHeight: 1.4
+  },
+
+  composedVideoSection: {
+    padding: '20px',
+    borderTop: `1px solid ${colors.border.light}`,
+    backgroundColor: colors.background.panel
+  },
+
+  composedVideoTitle: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: colors.text.primary,
+    marginBottom: 12,
+    textAlign: 'center'
+  },
+
+  composedVideo: {
+    width: '100%',
+    aspectRatio: '1/1',
+    objectFit: 'contain',
+    backgroundColor: colors.background.primary,
+    borderRadius: 8,
+    border: `1px solid ${colors.border.default}`
+  },
+
+  composedVideoEmpty: {
+    width: '100%',
+    aspectRatio: '1/1',
+    backgroundColor: colors.background.secondary,
+    borderRadius: 8,
+    border: `1px solid ${colors.border.default}`,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8
+  },
+
+  composedVideoEmptyIcon: {
+    fontSize: 48,
+    opacity: 0.4
+  },
+
+  composedVideoEmptyText: {
+    fontSize: 13,
+    color: colors.text.muted
   }
 };
 

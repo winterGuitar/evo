@@ -408,6 +408,8 @@ const App = () => {
   // 视频时间轴相关状态
   const [selectedTimelineItems, setSelectedTimelineItems] = useState([]);
   const [isTimelineCollapsed, setIsTimelineCollapsed] = useState(false);
+  const [composedVideoUrl, setComposedVideoUrl] = useState('');
+  const composedVideoUrlRef = useRef('');
 
   const imageInputPreviewVersion = useMemo(() => {
     return nodes
@@ -457,6 +459,19 @@ const App = () => {
   useEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
+
+  useEffect(() => {
+    if (composedVideoUrlRef.current && composedVideoUrlRef.current !== composedVideoUrl) {
+      URL.revokeObjectURL(composedVideoUrlRef.current);
+    }
+    composedVideoUrlRef.current = composedVideoUrl;
+  }, [composedVideoUrl]);
+
+  useEffect(() => () => {
+    if (composedVideoUrlRef.current) {
+      URL.revokeObjectURL(composedVideoUrlRef.current);
+    }
+  }, []);
 
   const setNodeDataById = useCallback((nodeId, dataPatch) => {
     if (!nodeId || !dataPatch) return;
@@ -1269,8 +1284,22 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
     const filePath = saveFilePath || `ai-workflow-${new Date().toISOString().slice(0, 10)}.json`;
     console.log('准备保存到文件:', filePath);
 
+    // 准备时间轴数据
+    const timelineData = {
+      items: timelineItems.map(item => ({
+        id: item.id,
+        type: item.type,
+        sequenceNumber: item.sequenceNumber,
+        label: item.label,
+        preview: item.preview, // 保存引用路径
+        fileName: item.fileName
+      })),
+      selectedItems: selectedTimelineItems,
+      composedVideoUrl: composedVideoUrl // 保存合成视频路径
+    };
+
     try {
-      const savedPath = await saveDataToFile(nodes, edges, filePath);
+      const savedPath = await saveDataToFile(nodes, edges, filePath, timelineData);
       console.log('保存完成，返回路径:', savedPath);
       if (savedPath) {
         setSaveFilePath(savedPath);
@@ -1280,7 +1309,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
       console.error('保存过程出错:', error);
       alert(`保存失败: ${error.message}`);
     }
-  }, [nodes, edges, saveFilePath]);
+  }, [nodes, edges, saveFilePath, timelineItems, selectedTimelineItems, composedVideoUrl]);
 
   const handleLoadFromFile = useCallback(async (event) => {
     const data = await loadDataFromFile(event);
@@ -1319,6 +1348,16 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
       }
       if (data.edges && data.edges.length > 0) {
         setEdges(attachDisconnectHandlers(data.edges));
+      }
+
+      // 恢复时间轴数据
+      if (data.timeline) {
+        if (data.timeline.selectedItems) {
+          setSelectedTimelineItems(data.timeline.selectedItems);
+        }
+        if (data.timeline.composedVideoUrl) {
+          setComposedVideoUrl(data.timeline.composedVideoUrl);
+        }
       }
 
       // 记录文件路径和时间
@@ -1447,11 +1486,11 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
+        setComposedVideoUrl(url);
         const a = document.createElement('a');
         a.href = url;
         a.download = `composed_video_${Date.now()}.webm`;
         a.click();
-        URL.revokeObjectURL(url);
         alert(`视频合成成功！\n合成序号: ${selectedSequenceNumbers.join(', ')}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
       };
 
@@ -1496,7 +1535,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
 
   return (
     <div style={globalStyles.appContainer}>
-      <NodePalette onDragStart={onDragStart} />
+      <NodePalette onDragStart={onDragStart} composedVideoUrl={composedVideoUrl} />
 
       {/* 隐藏的文件输入框 */}
       <input
@@ -1602,6 +1641,34 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
               height: isTimelineCollapsed ? '40px' : '160px',
               transition: 'height 0.3s ease'
             }}>
+              {/* 折叠按钮 - 时间轴顶部中间，与标题栏对齐 */}
+              <button
+                type="button"
+                onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
+                style={{
+                  position: 'absolute',
+                  top: '0',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  background: colors.background.hover,
+                  border: `1px solid ${colors.border.default}`,
+                  borderRadius: '6px',
+                  padding: '4px 12px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  color: colors.text.light,
+                  transition: 'all 0.2s ease',
+                  zIndex: 10,
+                  ':hover': {
+                    background: colors.background.secondary,
+                    borderColor: colors.text.light
+                  }
+                }}
+                title={isTimelineCollapsed ? '展开时间轴' : '折叠时间轴'}
+              >
+                {isTimelineCollapsed ? '▲ 展开' : '▼ 折叠'}
+              </button>
               <div style={canvasStyles.timelineHeader}>
                 <div style={canvasStyles.timelineTitle}>
                   🎬 视频时间轴
@@ -1656,33 +1723,6 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
                     🎥 合成视频 ({selectedTimelineItems.length})
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
-                  style={{
-                    position: 'absolute',
-                    top: '50%',
-                    right: '12px',
-                    transform: 'translateY(-50%)',
-                    background: colors.background.hover,
-                    border: `1px solid ${colors.border.default}`,
-                    borderRadius: '6px',
-                    padding: '6px 10px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    color: colors.text.light,
-                    transition: 'all 0.2s ease',
-                    zIndex: 10,
-                    ':hover': {
-                      background: colors.background.secondary,
-                      borderColor: colors.text.light
-                    }
-                  }}
-                  title={isTimelineCollapsed ? '展开时间轴' : '折叠时间轴'}
-                >
-                  {isTimelineCollapsed ? '▲ 展开' : '▼ 折叠'}
-                </button>
               </div>
               <div style={{
                 ...canvasStyles.timelineContent,
