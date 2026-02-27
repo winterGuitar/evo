@@ -409,6 +409,7 @@ const App = () => {
   const [selectedTimelineItems, setSelectedTimelineItems] = useState([]);
   const [isTimelineCollapsed, setIsTimelineCollapsed] = useState(false);
   const [composedVideoUrl, setComposedVideoUrl] = useState('');
+  const [composeProgress, setComposeProgress] = useState({ current: 0, total: 0, isComposing: false });
   const composedVideoUrlRef = useRef('');
 
   const imageInputPreviewVersion = useMemo(() => {
@@ -1418,7 +1419,8 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
 
     // 前端本地视频合成
     try {
-      alert('开始合成视频，请稍候...');
+      // 初始化进度
+      setComposeProgress({ current: 0, total: selectedUrls.length, isComposing: true });
 
       // 使用 MediaRecorder API 在浏览器中合并视频
       const canvas = document.createElement('canvas');
@@ -1450,6 +1452,9 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
 
         videoElements.push(video);
       }
+
+      // 更新进度：开始合成
+      setComposeProgress({ current: 0, total: videoElements.length, isComposing: true });
 
       // 设置画布尺寸（使用第一个视频的尺寸）
       const firstVideo = videoElements[0];
@@ -1487,6 +1492,7 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
         const blob = new Blob(chunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
         setComposedVideoUrl(url);
+        setComposeProgress({ current: videoElements.length, total: videoElements.length, isComposing: false });
         const a = document.createElement('a');
         a.href = url;
         a.download = `composed_video_${Date.now()}.webm`;
@@ -1501,6 +1507,9 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
       for (let i = 0; i < videoElements.length; i++) {
         const video = videoElements[i];
         console.log(`正在处理第 ${i + 1}/${videoElements.length} 个视频`);
+
+        // 更新进度
+        setComposeProgress(prev => ({ ...prev, current: i + 1 }));
 
         await new Promise((resolve) => {
           video.currentTime = 0;
@@ -1529,13 +1538,14 @@ const handleSendNodeRequest = useCallback(async (nodeId) => {
       console.log('MediaRecorder 已停止');
     } catch (error) {
       console.error('视频合成失败:', error);
+      setComposeProgress({ current: 0, total: 0, isComposing: false });
       alert(`视频合成失败: ${error.message}\n请查看控制台获取详细信息`);
     }
   }, [selectedTimelineItems, timelineItems]);
 
   return (
     <div style={globalStyles.appContainer}>
-      <NodePalette onDragStart={onDragStart} composedVideoUrl={composedVideoUrl} />
+      <NodePalette onDragStart={onDragStart} composedVideoUrl={composedVideoUrl} composeProgress={composeProgress} />
 
       {/* 隐藏的文件输入框 */}
       <input

@@ -2,7 +2,11 @@ import React from 'react';
 import { paletteStyles } from '../styles';
 import { NODE_PALETTE_CATEGORIES, getNodeColor } from '../constants';
 
-const NodePalette = ({ onDragStart, composedVideoUrl }) => {
+const NodePalette = ({ onDragStart, composedVideoUrl, composeProgress }) => {
+  const progressPercent = composeProgress.total > 0
+    ? Math.round((composeProgress.current / composeProgress.total) * 100)
+    : 0;
+
   return (
     <div style={paletteStyles.container}>
       <div style={paletteStyles.header}>
@@ -47,7 +51,21 @@ const NodePalette = ({ onDragStart, composedVideoUrl }) => {
       {/* 合成视频展示框 */}
       <div style={paletteStyles.composedVideoSection}>
         <div style={paletteStyles.composedVideoTitle}>🎥 合成视频</div>
-        {composedVideoUrl ? (
+        {composeProgress.isComposing ? (
+          <div style={paletteStyles.composedVideoProgress}>
+            <div style={paletteStyles.composedVideoProgressIcon}>⏳</div>
+            <div style={paletteStyles.composedVideoProgressText}>合成中... {progressPercent}%</div>
+            <div style={paletteStyles.composedVideoProgressTextDetail}>
+              视频 {composeProgress.current} / {composeProgress.total}
+            </div>
+            <div style={paletteStyles.composedVideoProgressBar}>
+              <div style={{
+                ...paletteStyles.composedVideoProgressFill,
+                width: `${progressPercent}%`
+              }} />
+            </div>
+          </div>
+        ) : composedVideoUrl ? (
           <video
             src={composedVideoUrl}
             controls

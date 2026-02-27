@@ -645,6 +645,51 @@ export const paletteStyles = {
   composedVideoEmptyText: {
     fontSize: 13,
     color: colors.text.muted
+  },
+
+  composedVideoProgress: {
+    width: '100%',
+    aspectRatio: '1/1',
+    backgroundColor: colors.background.primary,
+    borderRadius: 8,
+    border: `1px solid ${colors.border.default}`,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    padding: 20
+  },
+
+  composedVideoProgressIcon: {
+    fontSize: 64,
+    opacity: 0.6
+  },
+
+  composedVideoProgressText: {
+    fontSize: 16,
+    fontWeight: 600,
+    color: colors.text.primary
+  },
+
+  composedVideoProgressTextDetail: {
+    fontSize: 13,
+    color: colors.text.muted
+  },
+
+  composedVideoProgressBar: {
+    width: '100%',
+    height: 8,
+    backgroundColor: colors.border.dark,
+    borderRadius: 4,
+    overflow: 'hidden'
+  },
+
+  composedVideoProgressFill: {
+    height: '100%',
+    backgroundColor: colors.status.running,
+    borderRadius: 4,
+    transition: 'width 0.3s ease'
   }
 };
 
