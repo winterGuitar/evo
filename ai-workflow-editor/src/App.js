@@ -403,7 +403,7 @@ const App = () => {
       if (e.key === 'Delete' && selectedNode) {
         e.preventDefault();
         if (window.confirm(`确定要删除节点 "${selectedNode.data.label || selectedNode.id}" 吗？`)) {
-          handleDeleteNode(selectedNode.id, setNodes, setEdges, setSelectedNode);
+          handleDeleteNode(selectedNode.id, setNodes, setEdges, setSelectedNode, nodesRef.current);
         }
       }
     };
@@ -797,7 +797,11 @@ const App = () => {
         console.log("任务提交成功，taskId：", taskId);
 
         // 5. 循环查询任务状态（模拟原queryTaskLoop逻辑）
+        let isCancelled = false;
         const queryTask = async () => {
+          // 检查是否已被取消（节点被删除或组件卸载）
+          if (isCancelled) return;
+
           const queryRes = await fetch('http://localhost:3001/api/ti2v/query', {
               method: 'POST', // 必须和服务端app.post匹配
               headers: { 'Content-Type': 'application/json' }, // 必须传Content-Type
@@ -835,12 +839,24 @@ const App = () => {
               case "in_queue":
               case "running":
                 // 继续查询
-                setTimeout(queryTask, 5000);
+                if (!isCancelled) {
+                  setTimeout(queryTask, 5000);
+                }
                 break;
               default:
-                setTimeout(queryTask, 5000);
+                if (!isCancelled) {
+                  setTimeout(queryTask, 5000);
+                }
             }
           };
+
+        // 将清理函数存储到节点上
+        if (!targetNode._cancelQueryTask) {
+          targetNode._cancelQueryTask = [];
+        }
+        const cancelFn = () => { isCancelled = true; };
+        targetNode._cancelQueryTask.push(cancelFn);
+
         queryTask();
       } else if (targetNode.type === 'image-gen') {
         // ========== 图片生成逻辑 ==========
@@ -848,8 +864,8 @@ const App = () => {
         // TODO: 这里应该调用图片生成API
         // 目前只是模拟生成成功
 
-        // 模拟API调用延迟
-        setTimeout(() => {
+        // 模拟API调用延迟 - 使用 ref 存储 timeout 以便清理
+        const timeoutId = setTimeout(() => {
           // 创建一个模拟的图片（使用输入的图片本身作为示例）
           const resultImageBase64 = imageBase64;
 
@@ -862,6 +878,12 @@ const App = () => {
           alert('图片生成成功！（模拟）');
           console.log('图片生成任务完成');
         }, 2000);
+
+        // 存储到 ref 以便清理（实际使用中需要在组件添加对应的清理逻辑）
+        if (!targetNode._timeoutIds) {
+          targetNode._timeoutIds = [];
+        }
+        targetNode._timeoutIds.push(timeoutId);
       }
     } catch (error) {
       // 6. 处理错误

@@ -165,7 +165,20 @@ export const useNodeOperations = () => {
       return;
     }
 
-    setNodes((nds) => nds.filter(node => node.id !== nodeId));
+    setNodes((nds) => nds.filter(node => {
+      if (node.id === nodeId) {
+        // 清理节点相关的定时器和任务
+        if (node._timeoutIds) {
+          node._timeoutIds.forEach(timeoutId => clearTimeout(timeoutId));
+        }
+        // 取消正在进行的查询任务
+        if (node._cancelQueryTask) {
+          node._cancelQueryTask.forEach(cancelFn => cancelFn());
+        }
+        return false; // 过滤掉这个节点
+      }
+      return true;
+    }));
     setEdges((eds) => eds.filter(edge =>
       edge.source !== nodeId && edge.target !== nodeId
     ));
@@ -271,7 +284,7 @@ export const useNodeOperations = () => {
   /**
    * 发送节点请求
    */
-  const handleSendNodeRequest = useCallback(async (nodeId, nodes, edges, setNodes, setSelectedNode) => {
+  const handleSendNodeRequest = useCallback(async (nodeId, nodes, setNodes, setSelectedNode) => {
     if (!nodeId) return;
 
     const currentNodes = nodes;

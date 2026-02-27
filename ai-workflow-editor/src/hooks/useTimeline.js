@@ -154,20 +154,22 @@ export const useTimeline = (timelineItems) => {
 
         // 保存服务器路径，用于保存文件时使用
         setComposedVideoServerPath(serverPath);
-        setComposedVideoUrl(serverUrl || URL.createObjectURL(blob));
-        setComposeProgress({ current: videoElements.length, total: videoElements.length, isComposing: false });
-
-        // 如果上传成功，显示服务器URL；否则下载本地文件
-        if (serverUrl) {
-          alert(`视频合成成功！\n合成序号: ${selectedSequenceNumbers.join(', ')}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB\n已保存到服务器`);
-        } else {
-          const localUrl = URL.createObjectURL(blob);
+        let finalVideoUrl = serverUrl;
+        if (!serverUrl) {
+          // 只在需要时创建 Blob URL
+          finalVideoUrl = URL.createObjectURL(blob);
           const a = document.createElement('a');
-          a.href = localUrl;
+          a.href = finalVideoUrl;
           a.download = `composed_video_${Date.now()}.webm`;
           a.click();
+          // 立即释放 Blob URL
+          setTimeout(() => URL.revokeObjectURL(finalVideoUrl), 100);
           alert(`视频合成成功！\n合成序号: ${selectedSequenceNumbers.join(', ')}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+        } else {
+          alert(`视频合成成功！\n合成序号: ${selectedSequenceNumbers.join(', ')}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB\n已保存到服务器`);
         }
+        setComposedVideoUrl(finalVideoUrl);
+        setComposeProgress({ current: videoElements.length, total: videoElements.length, isComposing: false });
       };
 
       mediaRecorder.start();
@@ -206,6 +208,14 @@ export const useTimeline = (timelineItems) => {
 
       mediaRecorder.stop();
       console.log('MediaRecorder 已停止');
+
+      // 清理所有视频元素
+      videoElements.forEach(video => {
+        video.pause();
+        video.src = '';
+        video.load();
+        video.remove();
+      });
     } catch (error) {
       console.error('视频合成失败:', error);
       setComposeProgress({ current: 0, total: 0, isComposing: false });
