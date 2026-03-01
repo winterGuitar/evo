@@ -27,9 +27,7 @@ export const AI_MODELS = {
     { id: 'qwen-image', name: 'Qwen Image', provider: 'Alibaba', description: 'Creative image generation' }
   ],
   'video-gen': [
-    { id: 'sora', name: 'Sora', provider: 'OpenAI', description: 'High-quality text-to-video generation' },
-    { id: 'kling', name: 'Kling', provider: 'Kuaishou', description: 'Strong Chinese scene understanding' },
-    { id: 'runway-gen-3', name: 'Runway Gen-3', provider: 'Runway', description: 'Cinematic video generation' }
+    { id: 'jimeng', name: '即梦', provider: 'ByteDance', description: '即梦视频生成' }
   ],
   'image-input': [],
   'video-input': []
