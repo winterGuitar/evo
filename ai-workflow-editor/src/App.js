@@ -754,48 +754,79 @@ const App = () => {
     // 1. 准备请求参数（从节点数据中获取）
     const { inputText: prompt, inputPreviews = [], aspectRatio = '16:9', duration = '5s' } = targetNode.data;
 
+    // 获取选中的模型ID
+    const selectedModel = targetNode.data.model || 'jimeng';
+    console.log('选择的模型:', selectedModel);
+
     // 根据时长计算对应的frame数
     const durationToFramesMap = {
       '5s': 121,
       '10s': 241
     };
     const frames = durationToFramesMap[duration] || 121;
-    const imageInput = inputPreviews[0]; // 取第一个关联的输入节点
-    if (!imageInput?.preview) {
+
+    // 万相模型需要至少一张输入图，最好有两张（首帧和尾帧）
+    if (inputPreviews.length === 0 || !inputPreviews[0]?.preview) {
       alert("请先关联图片或视频输入节点！");
       return;
     }
 
     // 2. 处理输入源（图片或视频）
-    let imageBase64 = '';
+    let firstFrameBase64 = '';
+    let lastFrameBase64 = '';
 
     try {
-      if (imageInput.isVideoSource) {
+      // 处理第一张输入图（首帧）
+      const firstInput = inputPreviews[0];
+      if (firstInput.isVideoSource) {
         // 如果是视频源，提取最后一帧
-        console.log('从视频源提取最后一帧...');
-        const videoFrameDataUrl = await extractVideoFrame(imageInput.preview);
-        // 移除 data:image/jpeg;base64, 前缀
-        imageBase64 = videoFrameDataUrl.split(',')[1];
-        console.log('视频帧提取成功');
+        console.log('从视频源提取首帧...');
+        const videoFrameDataUrl = await extractVideoFrame(firstInput.preview);
+        firstFrameBase64 = videoFrameDataUrl.split(',')[1];
+        console.log('首帧提取成功');
       } else {
         // 如果是图片源，直接使用
-        if (imageInput.preview.startsWith('data:image/')) {
-          imageBase64 = imageInput.preview.split(',')[1]; // 移除data:image/xxx;base64,前缀
-        } else if (imageInput.preview.startsWith('blob:')) {
-          // 如果是blob URL，先转换为Base64
-          const response = await fetch(imageInput.preview);
+        if (firstInput.preview.startsWith('data:image/')) {
+          firstFrameBase64 = firstInput.preview.split(',')[1];
+        } else if (firstInput.preview.startsWith('blob:')) {
+          const response = await fetch(firstInput.preview);
           const blob = await response.blob();
           const reader = new FileReader();
           await new Promise((resolve) => {
             reader.onload = resolve;
             reader.readAsDataURL(blob);
           });
-          imageBase64 = reader.result.split(',')[1];
+          firstFrameBase64 = reader.result.split(',')[1];
         }
       }
 
-      if (!imageBase64) {
-        throw new Error('无法获取图片数据');
+      // 处理第二张输入图（尾帧）- 仅万相模型需要
+      if (selectedModel === 'wanxiang' && inputPreviews[1]?.preview) {
+        const secondInput = inputPreviews[1];
+        if (secondInput.isVideoSource) {
+          console.log('从视频源提取尾帧...');
+          const videoFrameDataUrl = await extractVideoFrame(secondInput.preview);
+          lastFrameBase64 = videoFrameDataUrl.split(',')[1];
+          console.log('尾帧提取成功');
+        } else {
+          if (secondInput.preview.startsWith('data:image/')) {
+            lastFrameBase64 = secondInput.preview.split(',')[1];
+          } else if (secondInput.preview.startsWith('blob:')) {
+            const response = await fetch(secondInput.preview);
+            const blob = await response.blob();
+            const reader = new FileReader();
+            await new Promise((resolve) => {
+              reader.onload = resolve;
+              reader.readAsDataURL(blob);
+            });
+            lastFrameBase64 = reader.result.split(',')[1];
+          }
+        }
+        console.log('尾帧图片已准备');
+      }
+
+      if (!firstFrameBase64) {
+        throw new Error('无法获取首帧图片数据');
       }
     } catch (error) {
       alert(`处理输入源失败：${error.message}`);
@@ -815,17 +846,33 @@ const App = () => {
       if (targetNode.type === 'video-gen') {
         // ========== 视频生成逻辑 ==========
         console.log('提交视频生成任务...');
-        // 4. 调用后端"提交任务"接口
+        console.log('模型:', selectedModel);
+        
+        // 4. 根据模型准备不同的请求参数
+        const requestBody = {
+          model: selectedModel,
+          prompt
+        };
+
+        if (selectedModel === 'wanxiang') {
+          // 万相模型使用首帧和尾帧
+          requestBody.firstFrameBase64 = firstFrameBase64;
+          requestBody.lastFrameBase64 = lastFrameBase64;
+          console.log('使用万相参数: firstFrameBase64, lastFrameBase64');
+        } else {
+          // 即梦模型使用 imageBase64, seed, frames, aspect_ratio
+          requestBody.imageBase64 = firstFrameBase64;
+          requestBody.seed = 12345;
+          requestBody.frames = frames;
+          requestBody.aspect_ratio = aspectRatio;
+          console.log('使用即梦参数: imageBase64, seed, frames, aspect_ratio');
+        }
+
+        // 5. 调用后端"提交任务"接口
         const submitRes = await fetch('http://localhost:3001/api/ti2v/submit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            imageBase64,
-            prompt,
-            seed: 12345,
-            frames,
-            aspect_ratio: aspectRatio
-          })
+          body: JSON.stringify(requestBody)
         });
         const submitData = await submitRes.json();
 
@@ -844,7 +891,10 @@ const App = () => {
           const queryRes = await fetch('http://localhost:3001/api/ti2v/query', {
               method: 'POST', // 必须和服务端app.post匹配
               headers: { 'Content-Type': 'application/json' }, // 必须传Content-Type
-              body: JSON.stringify({ taskId }) // taskId放在请求体里
+              body: JSON.stringify({ 
+                taskId,
+                model: selectedModel // 传递模型ID
+              }) // taskId放在请求体里
             });
             const queryData = await queryRes.json();
 
@@ -906,7 +956,7 @@ const App = () => {
         // 模拟API调用延迟 - 使用 ref 存储 timeout 以便清理
         const timeoutId = setTimeout(() => {
           // 创建一个模拟的图片（使用输入的图片本身作为示例）
-          const resultImageBase64 = imageBase64;
+          const resultImageBase64 = firstFrameBase64;
 
           setNodeDataById(targetNode.id, {
             status: 'completed',

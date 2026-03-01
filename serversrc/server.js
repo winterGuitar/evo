@@ -22,6 +22,7 @@ const fetch = async (...args) => {
 
 // ===================== 1. 引入服务 =====================
 const JimengService = require('./services/jimeng.service');
+const WanxiangService = require('./services/wanxiang.service');
 
 // ===================== 2. 基础配置（替换为你的火山引擎信息） =====================
 const BASE_CONFIG = {
@@ -34,6 +35,10 @@ const BASE_CONFIG = {
 // 初始化即梦服务
 const jimengService = new JimengService(BASE_CONFIG.downloadDir);
 console.log('即梦服务初始化完成');
+
+// 初始化万相服务
+const wanxiangService = new WanxiangService(BASE_CONFIG.downloadDir);
+console.log('万相服务初始化完成');
 
 // ===================== 文件哈希缓存 =====================
 // 文件缓存结构：{ 文件路径: { hash: SHA256, size: 文件大小, mtime: 修改时间 } }
@@ -275,33 +280,49 @@ app.use('/ti2v-videos', express.static(BASE_CONFIG.downloadDir));
 /**
  * 接口1：提交视频生成任务
  * POST /api/ti2v/submit
- * 请求体：{ model, prompt, imageBase64, seed, frames, aspect_ratio, duration }
+ * 请求体：{ model, prompt, imageBase64, seed, frames, aspect_ratio, duration, firstFrameBase64, lastFrameBase64 }
  * 响应：{ code, message, data: { taskId, model } }
  */
 app.post('/api/ti2v/submit', async (req, res) => {
   try {
-    const { model, prompt, imageBase64, seed, frames, aspect_ratio, duration } = req.body;
+    const { model, prompt, imageBase64, seed, frames, aspect_ratio, duration, firstFrameBase64, lastFrameBase64 } = req.body;
     
-    // 参数校验
-    if (!imageBase64) {
-      return res.status(400).json({
-        code: -1,
-        message: "参数错误：imageBase64为必填项",
-        data: null
-      });
-    }
-
     const selectedModel = model || 'jimeng';
     let submitResult;
 
     // 根据模型类型调用不同服务
     if (selectedModel === 'jimeng') {
+      // 即梦需要 imageBase64 参数
+      if (!imageBase64) {
+        return res.status(400).json({
+          code: -1,
+          message: "即梦模型需要 imageBase64 参数",
+          data: null
+        });
+      }
       submitResult = await jimengService.submitTask({
         prompt,
         imageBase64,
         seed,
         frames,
         aspectRatio: aspect_ratio
+      });
+    } else if (selectedModel === 'wanxiang') {
+      // 万相需要 firstFrameBase64 参数
+      if (!firstFrameBase64) {
+        return res.status(400).json({
+          code: -1,
+          message: "万相模型需要 firstFrameBase64 参数",
+          data: null
+        });
+      }
+      submitResult = await wanxiangService.submitTask({
+        prompt,
+        firstFrameBase64,
+        lastFrameBase64,
+        model: "wanx2.1-kf2v-plus",
+        resolution: "720P",
+        promptExtend: true
       });
     } else {
       return res.status(400).json({
@@ -311,8 +332,8 @@ app.post('/api/ti2v/submit', async (req, res) => {
       });
     }
 
-    // 提取taskId
-    const taskId = submitResult.data?.task_id || "";
+    // 提取taskId（万相和即梦的响应结构不同）
+    const taskId = submitResult.output?.task_id || submitResult.data?.task_id || "";
 
     // 返回结果
     res.status(200).json({
@@ -359,6 +380,9 @@ app.post('/api/ti2v/query', async (req, res) => {
     if (selectedModel === 'jimeng') {
       const queryResult = await jimengService.queryTask(taskId);
       result = jimengService.parseStatus(queryResult);
+    } else if (selectedModel === 'wanxiang') {
+      const queryResult = await wanxiangService.queryTask(taskId);
+      result = wanxiangService.parseStatus(queryResult);
     } else {
       return res.status(400).json({
         code: -1,
@@ -371,7 +395,10 @@ app.post('/api/ti2v/query', async (req, res) => {
     let localVideoPath = "";
     if (result.status === 'done' && result.videoUrl) {
       const files = fs.existsSync(BASE_CONFIG.downloadDir) ? fs.readdirSync(BASE_CONFIG.downloadDir) : [];
-      const videoFile = files.find(file => file.startsWith(taskId) && file.endsWith('.mp4'));
+      // 即梦和万相的文件命名不同，都尝试匹配
+      const videoFile = files.find(file => 
+        file.startsWith(taskId) || file.startsWith(`wanxiang_${taskId}`)
+      );
       if (videoFile) {
         localVideoPath = `http://localhost:${PORT}/ti2v-videos/${videoFile}`;
       }

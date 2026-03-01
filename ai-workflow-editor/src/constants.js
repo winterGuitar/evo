@@ -27,7 +27,8 @@ export const AI_MODELS = {
     { id: 'qwen-image', name: 'Qwen Image', provider: 'Alibaba', description: 'Creative image generation' }
   ],
   'video-gen': [
-    { id: 'jimeng', name: '即梦', provider: 'ByteDance', description: '即梦视频生成' }
+    { id: 'jimeng', name: '即梦', provider: 'ByteDance', description: '即梦视频生成' },
+    { id: 'wanxiang', name: '万相', provider: 'Alibaba', description: '万相图生视频' }
   ],
   'image-input': [],
   'video-input': []
