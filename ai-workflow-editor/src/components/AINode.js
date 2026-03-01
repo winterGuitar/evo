@@ -43,6 +43,13 @@ const AINode = ({
   const aspectRatioOptions = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9'];
   const currentAspectRatio = data.aspectRatio || '16:9';
 
+  // 视频时长选项（秒数 -> frame数）
+  const durationOptions = [
+    { label: '5s', value: '5s', frames: 121 },
+    { label: '10s', value: '10s', frames: 241 }
+  ];
+  const currentDuration = data.duration || '5s';
+
   const formatDisplayName = useCallback((name, maxChars = 6) => {
     if (!name || typeof name !== 'string') return name || '';
     const chars = Array.from(name);
@@ -110,6 +117,12 @@ const AINode = ({
     const ratio = event.target.value;
     if (!ratio || !onAspectRatioChange) return;
     onAspectRatioChange(id, ratio);
+  }, [id, onAspectRatioChange]);
+
+  const handleDurationChange = useCallback((event) => {
+    const duration = event.target.value;
+    if (!duration || !onAspectRatioChange) return;
+    onAspectRatioChange(id, undefined, duration);
   }, [id, onAspectRatioChange]);
 
   const handleSequenceChange = useCallback((event) => {
@@ -361,6 +374,24 @@ const AINode = ({
           >
             {aspectRatioOptions.map((ratio) => (
               <option key={ratio} value={ratio}>{ratio}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* 视频时长选择器 - 仅对视频生成节点显示 */}
+      {isVideoGenNode && (
+        <div style={nodeStyles.textInputSection}>
+          <span style={nodeStyles.textInputLabel}>视频时长:</span>
+          <select
+            className="nodrag"
+            value={currentDuration}
+            onChange={handleDurationChange}
+            onMouseDown={(event) => event.stopPropagation()}
+            style={nodeStyles.modelSelect}
+          >
+            {durationOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
         </div>

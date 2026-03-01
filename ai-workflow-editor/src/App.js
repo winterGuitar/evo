@@ -642,28 +642,32 @@ const App = () => {
     });
   }, [setNodes]);
 
-  const handleNodeAspectRatioChange = useCallback((nodeId, aspectRatio) => {
-    if (!nodeId || !aspectRatio) return;
+  const handleNodeAspectRatioChange = useCallback((nodeId, aspectRatio, duration) => {
+    if (!nodeId) return;
 
     setNodes((nds) => nds.map((node) => {
       if (node.id !== nodeId) return node;
+      const newData = {
+        ...node.data,
+        ...(aspectRatio !== undefined && { aspectRatio }),
+        ...(duration !== undefined && { duration })
+      };
       return {
         ...node,
-        data: {
-          ...node.data,
-          aspectRatio
-        }
+        data: newData
       };
     }));
 
     setSelectedNode((prev) => {
       if (!prev || prev.id !== nodeId) return prev;
+      const newData = {
+        ...prev.data,
+        ...(aspectRatio !== undefined && { aspectRatio }),
+        ...(duration !== undefined && { duration })
+      };
       return {
         ...prev,
-        data: {
-          ...prev.data,
-          aspectRatio
-        }
+        data: newData
       };
     });
   }, [setNodes]);
@@ -748,7 +752,14 @@ const App = () => {
     }
 
     // 1. 准备请求参数（从节点数据中获取）
-    const { inputText: prompt, inputPreviews = [] } = targetNode.data;
+    const { inputText: prompt, inputPreviews = [], aspectRatio = '16:9', duration = '5s' } = targetNode.data;
+
+    // 根据时长计算对应的frame数
+    const durationToFramesMap = {
+      '5s': 121,
+      '10s': 241
+    };
+    const frames = durationToFramesMap[duration] || 121;
     const imageInput = inputPreviews[0]; // 取第一个关联的输入节点
     if (!imageInput?.preview) {
       alert("请先关联图片或视频输入节点！");
@@ -812,8 +823,8 @@ const App = () => {
             imageBase64,
             prompt,
             seed: 12345,
-            frames: 121,
-            aspect_ratio: "16:9"
+            frames,
+            aspect_ratio: aspectRatio
           })
         });
         const submitData = await submitRes.json();
