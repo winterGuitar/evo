@@ -1,4 +1,4 @@
-﻿import { useRef, useCallback, useEffect } from 'react';
+﻿import { useRef, useCallback, useEffect, useState, Fragment } from 'react';
 import { Handle } from 'reactflow';
 import { nodeStyles, animations, colors } from '../styles';
 import { getNodeColor, getNodeIcon, AI_MODELS } from '../constants';
@@ -49,6 +49,9 @@ const AINode = ({
     { label: '10s', value: '10s', frames: 241 }
   ];
   const currentDuration = data.duration || '5s';
+
+  // 视频设置面板状态
+  const [showVideoSettings, setShowVideoSettings] = useState(false);
 
   const formatDisplayName = useCallback((name, maxChars = 6) => {
     if (!name || typeof name !== 'string') return name || '';
@@ -113,14 +116,12 @@ const AINode = ({
     onTextChange(id, event.target.value);
   }, [id, onTextChange]);
 
-  const handleAspectRatioChange = useCallback((event) => {
-    const ratio = event.target.value;
+  const handleAspectRatioChange = useCallback((ratio) => {
     if (!ratio || !onAspectRatioChange) return;
     onAspectRatioChange(id, ratio);
   }, [id, onAspectRatioChange]);
 
-  const handleDurationChange = useCallback((event) => {
-    const duration = event.target.value;
+  const handleDurationChange = useCallback((duration) => {
     if (!duration || !onAspectRatioChange) return;
     onAspectRatioChange(id, undefined, duration);
   }, [id, onAspectRatioChange]);
@@ -241,15 +242,16 @@ const AINode = ({
   };
 
   return (
-    <div
-      ref={nodeRef}
-      style={{
-        ...nodeStyles.container(selected, nodeColor),
-        ...(data.width ? { width: data.width } : {}),
-        ...(data.height ? { height: data.height } : {})
-      }}
-      onClick={(event) => event.stopPropagation()}
-    >
+    <Fragment>
+      <div
+        ref={nodeRef}
+        style={{
+          ...nodeStyles.container(selected, nodeColor),
+          ...(data.width ? { width: data.width } : {}),
+          ...(data.height ? { height: data.height } : {})
+        }}
+        onClick={(event) => event.stopPropagation()}
+      >
       <div style={nodeStyles.header(nodeColor)}>
         {nodeHeaderLabelMap[nodeType] || (data.type || 'AI NODE')}
       </div>
@@ -361,39 +363,42 @@ const AINode = ({
         </div>
       )}
 
-      {/* 视频比例选择器 - 仅对视频生成节点显示 */}
-      {isVideoGenNode && (
-        <div style={nodeStyles.textInputSection}>
-          <span style={nodeStyles.textInputLabel}>视频比例:</span>
-          <select
-            className="nodrag"
-            value={currentAspectRatio}
-            onChange={handleAspectRatioChange}
-            onMouseDown={(event) => event.stopPropagation()}
-            style={nodeStyles.modelSelect}
-          >
-            {aspectRatioOptions.map((ratio) => (
-              <option key={ratio} value={ratio}>{ratio}</option>
-            ))}
-          </select>
-        </div>
-      )}
 
-      {/* 视频时长选择器 - 仅对视频生成节点显示 */}
+      {/* 视频设置按钮 - 仅对视频生成节点显示 */}
       {isVideoGenNode && (
         <div style={nodeStyles.textInputSection}>
-          <span style={nodeStyles.textInputLabel}>视频时长:</span>
-          <select
-            className="nodrag"
-            value={currentDuration}
-            onChange={handleDurationChange}
+          <button
+            type="button"
+            className="nodrag nopan"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowVideoSettings(!showVideoSettings);
+            }}
             onMouseDown={(event) => event.stopPropagation()}
-            style={nodeStyles.modelSelect}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 6,
+              border: showVideoSettings
+                ? '2px solid #60a5fa'
+                : '1px solid rgba(0, 0, 0, 0.3)',
+              backgroundColor: showVideoSettings
+                ? 'rgba(96, 165, 250, 0.2)'
+                : 'rgba(0, 0, 0, 0.1)',
+              color: '#1a2634',
+              fontSize: '12px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              transition: 'all 0.2s'
+            }}
           >
-            {durationOptions.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
+            <span>视频设置</span>
+            <span style={{ fontSize: '10px' }}>{showVideoSettings ? '▼' : '▶'}</span>
+          </button>
         </div>
       )}
 
@@ -529,6 +534,125 @@ const AINode = ({
 
       <style>{animations}</style>
     </div>
+
+      {/* 浮动视频设置面板 - 紧贴节点右侧 */}
+      {isVideoGenNode && showVideoSettings && nodeRef.current && (
+        <div
+          style={{
+            position: 'absolute',
+            left: `${nodeRef.current.offsetWidth + 10}px`,
+            top: '0px',
+            width: '240px',
+            padding: '16px',
+            borderRadius: 8,
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            backgroundColor: 'rgba(30, 41, 59, 0.95)',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
+            zIndex: 1000,
+            backdropFilter: 'blur(8px)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div style={{
+            fontSize: '13px',
+            fontWeight: 600,
+            color: '#ffffff',
+            marginBottom: '12px',
+            paddingBottom: '8px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+          }}>视频设置</div>
+
+          {/* 视频比例Toggle组 */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{
+              fontSize: '11px',
+              color: 'rgba(255, 255, 255, 0.7)',
+              marginBottom: '8px',
+              fontWeight: 500
+            }}>视频比例</div>
+            <div style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '6px'
+            }}>
+              {aspectRatioOptions.map((ratio) => (
+                <button
+                  key={ratio}
+                  type="button"
+                  className="nodrag nopan"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleAspectRatioChange(ratio);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 4,
+                    border: currentAspectRatio === ratio
+                      ? '2px solid #60a5fa'
+                      : '1px solid rgba(255, 255, 255, 0.2)',
+                    backgroundColor: currentAspectRatio === ratio
+                      ? 'rgba(96, 165, 250, 0.2)'
+                      : 'rgba(255, 255, 255, 0.05)',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {ratio}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 视频时长Toggle组 */}
+          <div>
+            <div style={{
+              fontSize: '11px',
+              color: 'rgba(255, 255, 255, 0.7)',
+              marginBottom: '8px',
+              fontWeight: 500
+            }}>视频时长</div>
+            <div style={{
+              display: 'flex',
+              gap: '6px'
+            }}>
+              {durationOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className="nodrag nopan"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDurationChange(option.value);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  style={{
+                    flex: 1,
+                    padding: '8px 16px',
+                    borderRadius: 4,
+                    border: currentDuration === option.value
+                      ? '2px solid #60a5fa'
+                      : '1px solid rgba(255, 255, 255, 0.2)',
+                    backgroundColor: currentDuration === option.value
+                      ? 'rgba(96, 165, 250, 0.2)'
+                      : 'rgba(255, 255, 255, 0.05)',
+                    color: '#ffffff',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </Fragment>
   );
 };
 
