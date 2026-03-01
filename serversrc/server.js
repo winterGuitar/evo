@@ -1,8 +1,11 @@
 /**
  * Ti2V 视频生成后端服务
- * 依赖：express cors crypto fs-extra node-fetch
- * 安装：npm install express cors crypto fs-extra node-fetch
+ * 依赖：express cors crypto fs-extra node-fetch dotenv
+ * 安装：npm install express cors crypto fs-extra node-fetch dotenv
  */
+// 加载环境变量
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');

@@ -14,8 +14,8 @@ const fetch = async (...args) => {
 
 // ===================== 配置 =====================
 const CONFIG = {
-  accessKeyId: "",
-  secretAccessKey: "",
+  accessKeyId: process.env.JIMENG_ACCESS_KEY_ID || "",
+  secretAccessKey: process.env.JIMENG_SECRET_ACCESS_KEY || "",
   serviceName: "cv",
   region: "cn-north-1",
   host: "visual.volcengineapi.com",
