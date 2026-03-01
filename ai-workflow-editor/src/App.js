@@ -642,6 +642,33 @@ const App = () => {
     });
   }, [setNodes]);
 
+  const handleNodeAspectRatioChange = useCallback((nodeId, aspectRatio) => {
+    if (!nodeId || !aspectRatio) return;
+
+    setNodes((nds) => nds.map((node) => {
+      if (node.id !== nodeId) return node;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          aspectRatio
+        }
+      };
+    }));
+
+    setSelectedNode((prev) => {
+      if (!prev || prev.id !== nodeId) return prev;
+      return {
+        ...prev,
+        data: {
+          ...prev.data,
+          aspectRatio
+        }
+      };
+    });
+  }, [setNodes]);
+
+
   const handleSequenceChange = useCallback((nodeId, sequenceNumber, checkDuplicate = false) => {
     if (!nodeId) return;
 
@@ -1023,6 +1050,7 @@ const App = () => {
       onSendRequest={handleSendNodeRequest}
       onLastFrameCaptured={handleLastFrameCaptured}
       onSequenceChange={handleSequenceChange}
+      onAspectRatioChange={handleNodeAspectRatioChange}
     />,
     'image-input': (props) => <AINode {...props}
       onDelete={(nodeId) => handleDeleteNode(nodeId, setNodes, setEdges, setSelectedNode)}
@@ -1048,7 +1076,7 @@ const App = () => {
       onLastFrameCaptured={handleLastFrameCaptured}
       onSequenceChange={handleSequenceChange}
     />,
-  }), [handleDeleteNode, handleDisconnectNodeEdges, handleResizeNode, handleNodeModelChange, handleNodeTextChange, handleNodeImageSelect, handleNodeVideoSelect, handleSendNodeRequest, handleLastFrameCaptured, handleSequenceChange, setNodes, setEdges, setSelectedNode]);
+  }), [handleDeleteNode, handleDisconnectNodeEdges, handleResizeNode, handleNodeModelChange, handleNodeTextChange, handleNodeImageSelect, handleNodeVideoSelect, handleSendNodeRequest, handleLastFrameCaptured, handleSequenceChange, handleNodeAspectRatioChange, setNodes, setEdges, setSelectedNode]);
 
   const edgeTypes = useMemo(() => ({
     disconnectable: DisconnectableEdge

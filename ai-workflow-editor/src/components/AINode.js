@@ -19,7 +19,8 @@ const AINode = ({
   onVideoSelect,
   onSendRequest,
   onLastFrameCaptured,
-  onSequenceChange
+  onSequenceChange,
+  onAspectRatioChange
 }) => {
   const nodeRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -29,6 +30,7 @@ const AINode = ({
   const isInputNode = ['image-input', 'video-input'].includes(nodeType);
   const isImageInputNode = nodeType === 'image-input';
   const isVideoInputNode = nodeType === 'video-input';
+  const isVideoGenNode = nodeType === 'video-gen';
   const modelOptions = isGenerativeNode ? (AI_MODELS[nodeType] || []) : [];
   const hasSelectedModel = modelOptions.some((model) => model.id === data.model);
   const selectedModelId = hasSelectedModel ? data.model : (modelOptions[0]?.id || '');
@@ -36,6 +38,11 @@ const AINode = ({
   const inputPreviews = Array.isArray(data.inputPreviews)
     ? data.inputPreviews.filter((item) => item?.preview)
     : [];
+
+  // 视频比例选项
+  const aspectRatioOptions = ['16:9', '4:3', '1:1', '3:4', '9:16', '21:9'];
+  const currentAspectRatio = data.aspectRatio || '16:9';
+
   const formatDisplayName = useCallback((name, maxChars = 6) => {
     if (!name || typeof name !== 'string') return name || '';
     const chars = Array.from(name);
@@ -98,6 +105,12 @@ const AINode = ({
     if (!onTextChange) return;
     onTextChange(id, event.target.value);
   }, [id, onTextChange]);
+
+  const handleAspectRatioChange = useCallback((event) => {
+    const ratio = event.target.value;
+    if (!ratio || !onAspectRatioChange) return;
+    onAspectRatioChange(id, ratio);
+  }, [id, onAspectRatioChange]);
 
   const handleSequenceChange = useCallback((event) => {
     if (!onSequenceChange) return;
@@ -332,6 +345,24 @@ const AINode = ({
             placeholder="Input prompt..."
             style={nodeStyles.textInput}
           />
+        </div>
+      )}
+
+      {/* 视频比例选择器 - 仅对视频生成节点显示 */}
+      {isVideoGenNode && (
+        <div style={nodeStyles.textInputSection}>
+          <span style={nodeStyles.textInputLabel}>视频比例:</span>
+          <select
+            className="nodrag"
+            value={currentAspectRatio}
+            onChange={handleAspectRatioChange}
+            onMouseDown={(event) => event.stopPropagation()}
+            style={nodeStyles.modelSelect}
+          >
+            {aspectRatioOptions.map((ratio) => (
+              <option key={ratio} value={ratio}>{ratio}</option>
+            ))}
+          </select>
         </div>
       )}
 
