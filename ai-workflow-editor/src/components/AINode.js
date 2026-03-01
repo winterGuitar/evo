@@ -24,6 +24,7 @@ const AINode = ({
 }) => {
   const nodeRef = useRef(null);
   const fileInputRef = useRef(null);
+  const textAreaRef = useRef(null);
   const nodeType = type || data.type;
   const nodeColor = getNodeColor(nodeType);
   const isGenerativeNode = ['image-gen', 'video-gen'].includes(nodeType);
@@ -228,6 +229,14 @@ const AINode = ({
     }
   }, [data.preview, nodeType, isVideoInputNode, handleCaptureLastFrame, onLastFrameCaptured, id]);
 
+  // 自动调整textarea高度
+  useEffect(() => {
+    if (textAreaRef.current) {
+      textAreaRef.current.style.height = 'auto';
+      textAreaRef.current.style.height = `${Math.min(textAreaRef.current.scrollHeight, 120)}px`;
+    }
+  }, [data.inputText]);
+
   const previewFooterText = nodeType === 'video-gen'
     ? 'Video Thumbnail'
     : 'Generated Image';
@@ -351,14 +360,21 @@ const AINode = ({
       {!isInputNode && (
         <div style={nodeStyles.textInputSection}>
           <span style={nodeStyles.textInputLabel}>Prompt:</span>
-          <input
-            type="text"
+          <textarea
+            ref={textAreaRef}
             className="nodrag nopan"
             value={data.inputText || ''}
             onChange={handleTextChange}
             onMouseDown={(event) => event.stopPropagation()}
             placeholder="Input prompt..."
-            style={nodeStyles.textInput}
+            style={{
+              ...nodeStyles.textInput,
+              resize: 'none',
+              overflow: 'hidden',
+              minHeight: '28px',
+              maxHeight: '120px',
+              lineHeight: '1.4'
+            }}
           />
         </div>
       )}
