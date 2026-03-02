@@ -207,7 +207,8 @@ const App = () => {
     visible: false,
     x: 0,
     y: 0,
-    position: null
+    position: null,
+    targetNode: null // 菜单目标节点（可能是节点或画布）
   });
 
   // 保存文件输入框的 ref
@@ -493,15 +494,58 @@ const App = () => {
       visible: true,
       x: event.clientX,
       y: event.clientY,
-      position: position
+      position: position,
+      targetNode: null
     });
     setPendingConnection(null);
   }, [reactFlowInstance]);
 
+  // 节点右键菜单处理
+  const onNodeContextMenu = useCallback((event, node) => {
+    event.preventDefault();
+
+    if (!reactFlowWrapper.current || !reactFlowInstance) return;
+
+    const bounds = reactFlowWrapper.current.getBoundingClientRect();
+    const position = reactFlowInstance.project({
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top,
+    });
+
+    setContextMenu({
+      visible: true,
+      x: event.clientX,
+      y: event.clientY,
+      position: position,
+      targetNode: node
+    });
+  }, [reactFlowInstance]);
+
   const handleCloseContextMenu = useCallback(() => {
-    setContextMenu({ visible: false, x: 0, y: 0, position: null });
+    setContextMenu({ visible: false, x: 0, y: 0, position: null, targetNode: null });
     setPendingConnection(null);
   }, []);
+
+  // 复制节点
+  const handleDuplicateNode = useCallback((node) => {
+    if (!node) return;
+
+    const newNode = {
+      ...node,
+      id: `${node.type}-${Date.now()}`, // 生成唯一ID
+      position: {
+        x: node.position.x + 50,
+        y: node.position.y + 50
+      },
+      data: {
+        ...node.data,
+        // 清理不需要复制的内部字段
+        inputPreviews: node.data.inputPreviews ? [...node.data.inputPreviews] : []
+      }
+    };
+    setNodes((nds) => [...nds, newNode]);
+    handleCloseContextMenu();
+  }, [setNodes, handleCloseContextMenu]);
 
   const handleCreateNodeFromContextMenu = useCallback((nodeType) => {
     if (contextMenu.position) {
@@ -1356,6 +1400,7 @@ const App = () => {
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}
           onNodeClick={onNodeClick}
+          onNodeContextMenu={onNodeContextMenu}
           onSelectionChange={onSelectionChange}
           onPaneClick={onPaneClick}
           onPaneContextMenu={onPaneContextMenu}
@@ -1604,6 +1649,8 @@ const App = () => {
             y={contextMenu.y}
             onClose={handleCloseContextMenu}
             onCreateNode={handleCreateNodeFromContextMenu}
+            onDuplicateNode={handleDuplicateNode}
+            targetNode={contextMenu.targetNode}
           />
         )}
       </div>
