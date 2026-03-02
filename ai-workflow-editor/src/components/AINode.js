@@ -339,21 +339,90 @@ const AINode = ({
         </div>
       </div>
 
-      {!isInputNode && modelOptions.length > 0 && (
-        <div style={nodeStyles.modelInfo}>
-          <span style={{ fontWeight: 600 }}>Model:</span>
-          <select
-            className="nodrag"
-            value={selectedModelId}
-            onChange={handleModelChange}
-            onMouseDown={(event) => event.stopPropagation()}
-            style={nodeStyles.modelSelect}
-          >
-            {modelOptions.map((model) => (
-              <option key={model.id} value={model.id}>{model.name}</option>
-            ))}
-          </select>
-          {currentModel.provider && <span style={nodeStyles.modelMeta}>Provider: {currentModel.provider}</span>}
+      {/* 顶部控制栏：模型选择 + 视频设置 + Send按钮 */}
+      {!isInputNode && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px', padding: '0 4px' }}>
+          {/* 模型选择 */}
+          {modelOptions.length > 0 && (
+            <select
+              className="nodrag"
+              value={selectedModelId}
+              onChange={handleModelChange}
+              onMouseDown={(event) => event.stopPropagation()}
+              style={{
+                ...nodeStyles.modelSelect,
+                fontSize: '10px',
+                padding: '4px 4px',
+                flex: 1,
+                height: '24px'
+              }}
+            >
+              {modelOptions.map((model) => (
+                <option key={model.id} value={model.id}>{model.name}</option>
+              ))}
+            </select>
+          )}
+
+          {/* 视频设置按钮 - 仅对视频生成节点显示 */}
+          {isVideoGenNode && (
+            <button
+              type="button"
+              className="nodrag nopan"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowVideoSettings(!showVideoSettings);
+              }}
+              onMouseDown={(event) => event.stopPropagation()}
+              style={{
+                backgroundColor: showVideoSettings
+                  ? '#60a5fa'
+                  : '#475569',
+                border: showVideoSettings
+                  ? '2px solid #60a5fa'
+                  : '1px solid #64748b',
+                borderRadius: '4px',
+                color: '#ffffff',
+                cursor: 'pointer',
+                fontSize: '10px',
+                padding: '4px 6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '2px',
+                flex: 1.5,
+                height: '24px'
+              }}
+            >
+              <span>⚙️ 设置</span>
+              <span style={{ fontSize: '8px' }}>{showVideoSettings ? '▼' : '▶'}</span>
+            </button>
+          )}
+
+          {/* Send按钮 - 仅生成节点显示 */}
+          {isGenerativeNode && (
+            <button
+              type="button"
+              className="nodrag nopan"
+              onClick={handleSendRequest}
+              onMouseDown={(event) => event.stopPropagation()}
+              disabled={data.status === 'running'}
+              style={{
+                backgroundColor: data.status === 'running' ? '#94a3b8' : nodeColor,
+                borderRadius: '4px',
+                border: 'none',
+                color: '#ffffff',
+                cursor: data.status === 'running' ? 'not-allowed' : 'pointer',
+                fontSize: '10px',
+                fontWeight: 600,
+                padding: '4px 6px',
+                flex: 0.7,
+                height: '24px',
+                opacity: data.status === 'running' ? 0.7 : 1
+              }}
+            >
+              {data.status === 'running' ? 'Send' : 'Send'}
+            </button>
+          )}
         </div>
       )}
 
@@ -380,61 +449,7 @@ const AINode = ({
       )}
 
 
-      {/* 视频设置按钮 - 仅对视频生成节点显示 */}
-      {isVideoGenNode && (
-        <div style={nodeStyles.textInputSection}>
-          <button
-            type="button"
-            className="nodrag nopan"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowVideoSettings(!showVideoSettings);
-            }}
-            onMouseDown={(event) => event.stopPropagation()}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              borderRadius: 6,
-              border: showVideoSettings
-                ? '2px solid #60a5fa'
-                : '1px solid rgba(0, 0, 0, 0.3)',
-              backgroundColor: showVideoSettings
-                ? 'rgba(96, 165, 250, 0.2)'
-                : 'rgba(0, 0, 0, 0.1)',
-              color: '#1a2634',
-              fontSize: '12px',
-              fontWeight: 500,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '8px',
-              transition: 'all 0.2s'
-            }}
-          >
-            <span>视频设置</span>
-            <span style={{ fontSize: '10px' }}>{showVideoSettings ? '▼' : '▶'}</span>
-          </button>
-        </div>
-      )}
 
-      {isGenerativeNode && (
-        <div style={nodeStyles.sendButtonSection}>
-          <button
-            type="button"
-            className="nodrag nopan"
-            onClick={handleSendRequest}
-            onMouseDown={(event) => event.stopPropagation()}
-            disabled={data.status === 'running'}
-            style={{
-              ...nodeStyles.sendButton(nodeColor),
-              ...(data.status === 'running' ? nodeStyles.sendButtonDisabled : {})
-            }}
-          >
-            {data.status === 'running' ? 'Sending...' : 'Send'}
-          </button>
-        </div>
-      )}
 
       {isGenerativeNode && inputPreviews.length > 0 && (
         <div style={nodeStyles.inputPreviewContainer}>
