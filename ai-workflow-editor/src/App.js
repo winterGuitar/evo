@@ -1094,7 +1094,8 @@ const App = () => {
           visible: true,
           x: clientX,
           y: clientY,
-          position: releasePosition
+          position: releasePosition,
+          targetNode: null // 明确设置为null，表示是画布菜单
         });
       }
 

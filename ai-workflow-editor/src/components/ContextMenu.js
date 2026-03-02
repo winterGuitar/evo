@@ -36,7 +36,7 @@ const ContextMenu = ({ x, y, onClose, onCreateNode, onDuplicateNode, targetNode 
     >
       <div style={contextMenuStyles.header}>
         <span style={contextMenuStyles.title}>
-          {isNodeMenu ? `${NODE_ICONS[targetNode.type] || 'AI'} 节点操作` : '📌 创建节点'}
+          {isNodeMenu && targetNode ? `${NODE_ICONS[targetNode.type] || 'AI'} 节点操作` : '📌 创建节点'}
         </span>
         <button onClick={onClose} style={contextMenuStyles.closeButton}>✕</button>
       </div>
