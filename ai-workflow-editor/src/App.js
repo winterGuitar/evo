@@ -98,6 +98,7 @@ const syncImageInputPreviewForGenerativeNodes = (allNodes, allEdges) => {
         let previewUrl = '';
         let fileName = '';
         let isLastFrame = false;
+        let isVideoSource = false;
 
         // 图片输入节点：直接使用 preview
         if (sourceNode.type === 'image-input') {
@@ -109,12 +110,14 @@ const syncImageInputPreviewForGenerativeNodes = (allNodes, allEdges) => {
           previewUrl = sourceNode.data?.lastFrame || '';
           fileName = sourceNode.data?.fileName ? `${sourceNode.data.fileName}_last_frame.jpg` : 'video_frame.jpg';
           isLastFrame = true;
+          isVideoSource = true;
         }
         // 视频生成节点：使用最后一帧（缩略图）
         else if (sourceNode.type === 'video-gen') {
           previewUrl = sourceNode.data?.lastFrame || '';
           fileName = sourceNode.data?.fileName ? `${sourceNode.data.fileName}_last_frame.jpg` : 'generated_video_frame.jpg';
           isLastFrame = true;
+          isVideoSource = true;
         }
         // 图片生成节点：直接使用 preview（生成的图片）
         else if (sourceNode.type === 'image-gen') {
@@ -126,7 +129,8 @@ const syncImageInputPreviewForGenerativeNodes = (allNodes, allEdges) => {
           nodeId: sourceNode.id,
           preview: previewUrl,
           fileName,
-          isLastFrame
+          isLastFrame,
+          isVideoSource
         };
       })
       .filter((item) => item.preview);
@@ -160,30 +164,62 @@ const extractVideoFrame = async (videoUrl) => {
     video.src = videoUrl;
     video.muted = true;
     video.playsInline = true;
+    video.preload = 'auto';
+
+    let metadataLoaded = false;
+    let seekAttempted = false;
 
     video.onloadedmetadata = () => {
-      video.currentTime = video.duration; // 跳转到最后一帧
+      metadataLoaded = true;
+      // 稍微延迟一下，确保视频已准备好
+      setTimeout(() => {
+        // 跳转到最后一帧的前0.1秒，避免某些视频在最后一帧是黑屏
+        video.currentTime = Math.max(0, video.duration - 0.1);
+      }, 100);
     };
 
     video.onseeked = () => {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-        video.remove();
-        resolve(dataUrl);
-      } catch (error) {
-        reject(error);
-      }
+      seekAttempted = true;
+      // 等待一小段时间确保帧已渲染
+      setTimeout(() => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+
+          // 清空画布
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // 绘制视频帧
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          // 检查画布是否为空（全黑）
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const isBlack = imageData.data.every((channel, index) => index % 4 === 3 || channel === 0);
+
+          if (isBlack) {
+            console.warn('提取的视频帧为全黑，尝试提取中间帧');
+            // 如果最后一帧是黑屏，尝试提取中间帧
+            video.currentTime = video.duration * 0.5;
+          } else {
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+            video.remove();
+            resolve(dataUrl);
+          }
+        } catch (error) {
+          console.error('提取视频帧失败:', error);
+          reject(error);
+        }
+      }, 200);
     };
 
     video.onerror = () => {
       video.remove();
       reject(new Error('Failed to load video'));
     };
+
+    video.load();
   });
 };
 
@@ -827,17 +863,29 @@ const App = () => {
     try {
       // 处理第一张输入图（首帧）
       const firstInput = inputPreviews[0];
-      if (firstInput.isVideoSource) {
-        // 如果是视频源，提取最后一帧
-        console.log('从视频源提取首帧...');
-        const videoFrameDataUrl = await extractVideoFrame(firstInput.preview);
-        firstFrameBase64 = videoFrameDataUrl.split(',')[1];
-        console.log('首帧提取成功');
+      if (firstInput.preview.startsWith('data:image/')) {
+        // 如果是 base64 图片，直接使用
+        firstFrameBase64 = firstInput.preview.split(',')[1];
+      } else if (firstInput.preview.startsWith('blob:')) {
+        // 如果是 blob URL，转换为 base64
+        const response = await fetch(firstInput.preview);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        await new Promise((resolve) => {
+          reader.onload = resolve;
+          reader.readAsDataURL(blob);
+        });
+        firstFrameBase64 = reader.result.split(',')[1];
       } else {
-        // 如果是图片源，直接使用
-        if (firstInput.preview.startsWith('data:image/')) {
-          firstFrameBase64 = firstInput.preview.split(',')[1];
-        } else if (firstInput.preview.startsWith('blob:')) {
+        // 如果是其他格式（可能是视频URL），尝试提取帧
+        console.log('尝试从URL提取首帧...');
+        try {
+          const videoFrameDataUrl = await extractVideoFrame(firstInput.preview);
+          firstFrameBase64 = videoFrameDataUrl.split(',')[1];
+          console.log('首帧提取成功');
+        } catch (error) {
+          console.warn('无法从URL提取帧，尝试直接使用:', error);
+          // 尝试直接使用（如果已经是图片URL）
           const response = await fetch(firstInput.preview);
           const blob = await response.blob();
           const reader = new FileReader();
@@ -845,22 +893,37 @@ const App = () => {
             reader.onload = resolve;
             reader.readAsDataURL(blob);
           });
-          firstFrameBase64 = reader.result.split(',')[1];
+          if (reader.result.startsWith('data:image/')) {
+            firstFrameBase64 = reader.result.split(',')[1];
+          } else {
+            throw new Error('无法获取图片数据');
+          }
         }
       }
 
       // 处理第二张输入图（尾帧）- 仅万相模型需要
       if (selectedModel === 'wanxiang' && inputPreviews[1]?.preview) {
         const secondInput = inputPreviews[1];
-        if (secondInput.isVideoSource) {
-          console.log('从视频源提取尾帧...');
-          const videoFrameDataUrl = await extractVideoFrame(secondInput.preview);
-          lastFrameBase64 = videoFrameDataUrl.split(',')[1];
-          console.log('尾帧提取成功');
+        if (secondInput.preview.startsWith('data:image/')) {
+          lastFrameBase64 = secondInput.preview.split(',')[1];
+        } else if (secondInput.preview.startsWith('blob:')) {
+          const response = await fetch(secondInput.preview);
+          const blob = await response.blob();
+          const reader = new FileReader();
+          await new Promise((resolve) => {
+            reader.onload = resolve;
+            reader.readAsDataURL(blob);
+          });
+          lastFrameBase64 = reader.result.split(',')[1];
         } else {
-          if (secondInput.preview.startsWith('data:image/')) {
-            lastFrameBase64 = secondInput.preview.split(',')[1];
-          } else if (secondInput.preview.startsWith('blob:')) {
+          // 尝试从URL提取帧
+          console.log('尝试从URL提取尾帧...');
+          try {
+            const videoFrameDataUrl = await extractVideoFrame(secondInput.preview);
+            lastFrameBase64 = videoFrameDataUrl.split(',')[1];
+            console.log('尾帧提取成功');
+          } catch (error) {
+            console.warn('无法从URL提取尾帧:', error);
             const response = await fetch(secondInput.preview);
             const blob = await response.blob();
             const reader = new FileReader();
@@ -868,7 +931,9 @@ const App = () => {
               reader.onload = resolve;
               reader.readAsDataURL(blob);
             });
-            lastFrameBase64 = reader.result.split(',')[1];
+            if (reader.result.startsWith('data:image/')) {
+              lastFrameBase64 = reader.result.split(',')[1];
+            }
           }
         }
         console.log('尾帧图片已准备');

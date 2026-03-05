@@ -180,32 +180,68 @@ const AINode = ({
       video.crossOrigin = 'anonymous';
       video.muted = true;
       video.playsInline = true;
+      video.preload = 'auto';
 
       const cleanup = () => {
         video.pause();
         video.remove();
       };
 
-      video.addEventListener('loadeddata', () => {
-        // 跳到最后一帧
-        video.currentTime = video.duration;
-      });
+      let seekAttempts = 0;
+      const maxSeekAttempts = 2;
 
-      video.addEventListener('seeked', () => {
+      const captureFrame = () => {
         try {
           const canvas = document.createElement('canvas');
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
           const ctx = canvas.getContext('2d');
+
+          // 清空画布
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // 绘制视频帧
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const frameData = canvas.toDataURL('image/jpeg', 0.8);
-          cleanup();
-          resolve(frameData);
+
+          // 检查画布是否为空（全黑）
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          let isBlack = true;
+          for (let i = 0; i < imageData.data.length; i += 4) {
+            if (imageData.data[i] !== 0 || imageData.data[i + 1] !== 0 || imageData.data[i + 2] !== 0) {
+              isBlack = false;
+              break;
+            }
+          }
+
+          if (isBlack && seekAttempts < maxSeekAttempts) {
+            // 如果是黑屏，尝试中间帧
+            seekAttempts++;
+            console.warn(`捕获的视频帧为全黑，尝试提取中间帧 (尝试 ${seekAttempts}/${maxSeekAttempts})`);
+            const targetTime = video.duration * (seekAttempts === 1 ? 0.5 : 0.25);
+            video.currentTime = targetTime;
+          } else {
+            const frameData = canvas.toDataURL('image/jpeg', 0.8);
+            cleanup();
+            resolve(frameData);
+          }
         } catch (error) {
           console.error('Failed to capture video frame:', error);
           cleanup();
           resolve(null);
         }
+      };
+
+      video.addEventListener('loadeddata', () => {
+        // 等待一下再跳转，确保视频已加载
+        setTimeout(() => {
+          // 跳转到最后一帧的前0.1秒，避免某些视频在最后一帧是黑屏
+          video.currentTime = Math.max(0, video.duration - 0.1);
+        }, 100);
+      });
+
+      video.addEventListener('seeked', () => {
+        // 等待一小段时间确保帧已渲染
+        setTimeout(captureFrame, 200);
       });
 
       video.addEventListener('error', (error) => {
