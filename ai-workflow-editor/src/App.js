@@ -26,6 +26,7 @@ import AINode from './components/AINode';
 import NodePalette from './components/NodePalette';
 import ContextMenu from './components/ContextMenu';
 import DisconnectableEdge from './components/DisconnectableEdge';
+import ChatPanel from './components/ChatPanel';
 import {
   suppressResizeObserverWarning,
   createNewNode,
@@ -210,6 +211,10 @@ const App = () => {
     position: null,
     targetNode: null // 菜单目标节点（可能是节点或画布）
   });
+
+  // 聊天面板状态
+  const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
+  const serverUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:3001';
 
   // 保存文件输入框的 ref
   const fileInputRef = useRef(null);
@@ -1391,7 +1396,11 @@ const App = () => {
         onChange={handleLoadFromFile}
       />
 
-      <div style={canvasStyles.wrapper} ref={reactFlowWrapper}>
+      <div style={{
+        ...canvasStyles.wrapper,
+        marginRight: isChatPanelOpen ? '380px' : 0,
+        transition: 'margin-right 0.3s ease'
+      }} ref={reactFlowWrapper}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -1467,6 +1476,15 @@ const App = () => {
                 style={canvasStyles.secondaryButton}
               >
                 📂 打开文件
+              </button>
+              <button
+                onClick={() => setIsChatPanelOpen(!isChatPanelOpen)}
+                style={{
+                  ...canvasStyles.secondaryButton,
+                  backgroundColor: isChatPanelOpen ? '#3b82f6' : 'rgba(59, 130, 246, 0.1)'
+                }}
+              >
+                💬 豆包助手
               </button>
             </div>
           </Panel>
@@ -1644,6 +1662,7 @@ const App = () => {
             </div>
           )}
 
+
         {contextMenu.visible && (
           <ContextMenu
             x={contextMenu.x}
@@ -1654,6 +1673,12 @@ const App = () => {
             targetNode={contextMenu.targetNode}
           />
         )}
+
+        <ChatPanel
+          isOpen={isChatPanelOpen}
+          onClose={() => setIsChatPanelOpen(false)}
+          serverUrl={serverUrl}
+        />
       </div>
     </div>
   );

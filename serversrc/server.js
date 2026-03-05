@@ -23,13 +23,16 @@ const fetch = async (...args) => {
 // ===================== 1. 引入服务 =====================
 const JimengService = require('./services/jimeng.service');
 const WanxiangService = require('./services/wanxiang.service');
+const DoubaoService = require('./services/doubao.service');
 
 // ===================== 2. 基础配置（替换为你的火山引擎信息） =====================
 const BASE_CONFIG = {
   downloadDir: path.resolve(__dirname, "./ti2v_videos"), // 视频下载目录
   localImagePath: path.resolve(__dirname, "./test.png"), // 默认测试图片（可选）
   // 万相API配置
-  dashScopeApiKey: process.env.DASHSCOPE_API_KEY || "" // 阿里云DashScope API Key
+  dashScopeApiKey: process.env.DASHSCOPE_API_KEY || "", // 阿里云DashScope API Key
+  // 豆包API配置
+  doubaoApiKey: process.env.DOUBAO_API_KEY || "" // 豆包API Key
 };
 
 // 初始化即梦服务
@@ -39,6 +42,10 @@ console.log('即梦服务初始化完成');
 // 初始化万相服务
 const wanxiangService = new WanxiangService(BASE_CONFIG.downloadDir);
 console.log('万相服务初始化完成');
+
+// 初始化豆包服务
+const doubaoService = new DoubaoService(BASE_CONFIG.doubaoApiKey);
+console.log('豆包服务初始化完成');
 
 // ===================== 文件哈希缓存 =====================
 // 文件缓存结构：{ 文件路径: { hash: SHA256, size: 文件大小, mtime: 修改时间 } }
@@ -672,6 +679,68 @@ app.get('/api/health', (req, res) => {
       downloadDir: BASE_CONFIG.downloadDir
     }
   });
+});
+
+/**
+ * 接口10：豆包聊天接口
+ * POST /api/chat
+ */
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { input, model, previous_response_id } = req.body;
+
+    if (!input) {
+      return res.status(400).json({
+        code: 400,
+        message: "缺少必要参数: input",
+        data: null
+      });
+    }
+
+    const response = await doubaoService.createResponse(
+      input,
+      model || undefined,
+      { previous_response_id }
+    );
+
+    res.status(200).json({
+      code: 0,
+      message: "success",
+      data: response
+    });
+  } catch (error) {
+    console.error('豆包聊天错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: error.message || "豆包聊天失败",
+      data: null
+    });
+  }
+});
+
+/**
+ * 接口11：获取豆包响应详情
+ * GET /api/chat/:responseId
+ */
+app.get('/api/chat/:responseId', async (req, res) => {
+  try {
+    const { responseId } = req.params;
+
+    const response = await doubaoService.getResponse(responseId);
+
+    res.status(200).json({
+      code: 0,
+      message: "success",
+      data: response
+    });
+  } catch (error) {
+    console.error('获取豆包响应错误:', error);
+    res.status(500).json({
+      code: 500,
+      message: error.message || "获取响应失败",
+      data: null
+    });
+  }
 });
 
 // ===================== 6. 启动服务 =====================
