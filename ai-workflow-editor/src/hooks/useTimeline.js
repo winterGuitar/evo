@@ -164,10 +164,8 @@ export const useTimeline = (timelineItems) => {
           a.click();
           // 立即释放 Blob URL
           setTimeout(() => URL.revokeObjectURL(finalVideoUrl), 100);
-          alert(`视频合成成功！\n合成序号: ${selectedSequenceNumbers.join(', ')}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
-        } else {
-          alert(`视频合成成功！\n合成序号: ${selectedSequenceNumbers.join(', ')}\n文件大小: ${(blob.size / 1024 / 1024).toFixed(2)} MB\n已保存到服务器`);
         }
+        // 直接设置视频 URL，不显示弹窗，视频会自动播放
         setComposedVideoUrl(finalVideoUrl);
         setComposeProgress({ current: videoElements.length, total: videoElements.length, isComposing: false });
       };
