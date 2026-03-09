@@ -78,23 +78,59 @@ const syncImageInputPreviewForGenerativeNodes = (allNodes, allEdges) => {
   const nextNodes = allNodes.map((node) => {
     if (!['image-gen', 'video-gen'].includes(node.type)) return node;
 
-    const linkedImageInputNodeIds = [];
-    const linkedNodeIdSet = new Set();
+    const linkedEdges = [];
 
+    // 收集所有连接到当前节点的边
     allEdges.forEach((edge) => {
       if (edge.target !== node.id) return;
       const sourceNode = nodeMap.get(edge.source);
       // 支持所有输入源类型：图片输入、视频输入、视频生成、图片生成
       if (!['image-input', 'video-input', 'video-gen', 'image-gen'].includes(sourceNode?.type)) return;
-      if (linkedNodeIdSet.has(sourceNode.id)) return;
-      linkedNodeIdSet.add(sourceNode.id);
-      linkedImageInputNodeIds.push(sourceNode.id);
+      linkedEdges.push({ edge, sourceNode });
     });
 
-    const nextInputPreviews = linkedImageInputNodeIds
-      .map((sourceNodeId) => nodeMap.get(sourceNodeId))
-      .filter(Boolean)
-      .map((sourceNode) => {
+    const nextInputPreviews = [];
+
+    // 处理每个连接
+    linkedEdges.forEach(({ edge, sourceNode }) => {
+      // 如果是图片输入节点且设置了分割
+      if (sourceNode.type === 'image-input' &&
+          sourceNode.data?.splitRows > 0 &&
+          sourceNode.data?.splitCols > 0 &&
+          sourceNode.data?.splits) {
+
+        // 获取连接的目标 handle ID（例如 "output-0", "output-1" 等）
+        const sourceHandle = edge.sourceHandle;
+        if (sourceHandle && sourceHandle.startsWith('output-')) {
+          // 提取分割索引
+          const splitIndex = parseInt(sourceHandle.replace('output-', ''), 10);
+          const splits = sourceNode.data.splits;
+          if (splits && splits[splitIndex]) {
+            const split = splits[splitIndex];
+            nextInputPreviews.push({
+              nodeId: sourceNode.id,
+              preview: split.data,
+              fileName: `${sourceNode.data?.fileName || 'image'}_split_${split.label}.jpg`,
+              isLastFrame: false,
+              isVideoSource: false,
+              splitIndex: split.index,
+              splitLabel: split.label
+            });
+          }
+        } else {
+          // 如果没有指定具体的输出 handle，使用整个图片
+          if (sourceNode.data?.preview) {
+            nextInputPreviews.push({
+              nodeId: sourceNode.id,
+              preview: sourceNode.data.preview,
+              fileName: sourceNode.data?.fileName || '',
+              isLastFrame: false,
+              isVideoSource: false
+            });
+          }
+        }
+      } else {
+        // 其他节点类型或未设置分割的图片输入节点
         let previewUrl = '';
         let fileName = '';
         let isLastFrame = false;
@@ -125,15 +161,17 @@ const syncImageInputPreviewForGenerativeNodes = (allNodes, allEdges) => {
           fileName = sourceNode.data?.fileName || 'generated_image.jpg';
         }
 
-        return {
-          nodeId: sourceNode.id,
-          preview: previewUrl,
-          fileName,
-          isLastFrame,
-          isVideoSource
-        };
-      })
-      .filter((item) => item.preview);
+        if (previewUrl) {
+          nextInputPreviews.push({
+            nodeId: sourceNode.id,
+            preview: previewUrl,
+            fileName,
+            isLastFrame,
+            isVideoSource
+          });
+        }
+      }
+    });
 
     const prevInputPreviews = Array.isArray(node.data?.inputPreviews)
       ? node.data.inputPreviews
@@ -435,6 +473,82 @@ const App = () => {
     }));
   }, [setNodes]);
 
+  // 处理图片分割，计算每个分割区域的坐标
+  const handleImageSplit = useCallback(async (nodeId) => {
+    setNodes((nds) => {
+      const node = nds.find((n) => n.id === nodeId);
+      if (!node || node.type !== 'image-input' || !node.data.preview) {
+        return nds;
+      }
+
+      const { splitRows = 1, splitCols = 1, preview } = node.data;
+      const totalParts = splitRows * splitCols;
+
+      if (totalParts <= 1 || !preview) {
+        return nds;
+      }
+
+      // 异步处理分割
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+
+      img.onload = () => {
+        const width = img.width;
+        const height = img.height;
+        const splitWidth = width / splitCols;
+        const splitHeight = height / splitRows;
+
+        // 生成每个分割区域的坐标信息
+        const splits = [];
+        for (let row = 0; row < splitRows; row++) {
+          for (let col = 0; col < splitCols; col++) {
+            const index = row * splitCols + col;
+            const x = col * splitWidth;
+            const y = row * splitHeight;
+
+            // 创建 canvas 裁剪分割区域
+            const canvas = document.createElement('canvas');
+            canvas.width = splitWidth;
+            canvas.height = splitHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, x, y, splitWidth, splitHeight, 0, 0, splitWidth, splitHeight);
+
+            const splitImageData = canvas.toDataURL('image/jpeg', 0.9);
+
+            splits.push({
+              index,
+              x,
+              y,
+              width: splitWidth,
+              height: splitHeight,
+              data: splitImageData,
+              label: `${row + 1}-${col + 1}`
+            });
+          }
+        }
+
+        // 更新节点数据
+        setNodeDataById(nodeId, { splits });
+      };
+
+      img.onerror = () => {
+        console.warn('Failed to load image for splitting:', nodeId);
+      };
+
+      img.src = preview;
+      return nds;
+    });
+  }, [setNodes, setNodeDataById]);
+
+  // 当分割设置变化时，重新计算分割
+  useEffect(() => {
+    nodes.forEach(node => {
+      if (node.type === 'image-input' && node.data.preview && node.data.splitRows && node.data.splitCols) {
+        handleImageSplit(node.id);
+      }
+    });
+  }, [nodes, handleImageSplit]);
+
   // 键盘删除快捷键
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -675,27 +789,39 @@ const App = () => {
     }));
   }, [setNodes]);
 
-  const handleNodeModelChange = useCallback((nodeId, modelId) => {
-    if (!nodeId || !modelId) return;
+  const handleNodeModelChange = useCallback((nodeId, modelId, extraData) => {
+    if (!nodeId) return;
 
     setNodes((nds) => nds.map((node) => {
       if (node.id !== nodeId) return node;
+      const updates = {
+        ...extraData
+      };
+      if (modelId) {
+        updates.model = modelId;
+      }
       return {
         ...node,
         data: {
           ...node.data,
-          model: modelId
+          ...updates
         }
       };
     }));
 
     setSelectedNode((prev) => {
       if (!prev || prev.id !== nodeId) return prev;
+      const updates = {
+        ...extraData
+      };
+      if (modelId) {
+        updates.model = modelId;
+      }
       return {
         ...prev,
         data: {
           ...prev.data,
-          model: modelId
+          ...updates
         }
       };
     });

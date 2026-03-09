@@ -54,6 +54,11 @@ const AINode = ({
   // 视频设置面板状态
   const [showVideoSettings, setShowVideoSettings] = useState(false);
 
+  // 图片分割设置
+  const [splitRows, setSplitRows] = useState(data.splitRows || 1);
+  const [splitCols, setSplitCols] = useState(data.splitCols || 1);
+  const [showSplitSettings, setShowSplitSettings] = useState(false);
+
   const formatDisplayName = useCallback((name, maxChars = 6) => {
     if (!name || typeof name !== 'string') return name || '';
     const chars = Array.from(name);
@@ -126,6 +131,22 @@ const AINode = ({
     if (!duration || !onAspectRatioChange) return;
     onAspectRatioChange(id, undefined, duration);
   }, [id, onAspectRatioChange]);
+
+  const handleSplitRowsChange = useCallback((value) => {
+    const numValue = Math.max(1, Math.min(10, parseInt(value) || 1));
+    setSplitRows(numValue);
+    if (onModelChange) {
+      onModelChange(id, undefined, { splitRows: numValue });
+    }
+  }, [id, onModelChange]);
+
+  const handleSplitColsChange = useCallback((value) => {
+    const numValue = Math.max(1, Math.min(10, parseInt(value) || 1));
+    setSplitCols(numValue);
+    if (onModelChange) {
+      onModelChange(id, undefined, { splitCols: numValue });
+    }
+  }, [id, onModelChange]);
 
   const handleSequenceChange = useCallback((event) => {
     if (!onSequenceChange) return;
@@ -376,6 +397,7 @@ const AINode = ({
       </div>
 
       {/* 顶部控制栏：模型选择 + 视频设置 + Send按钮 */}
+      {/* 顶部控制栏：模型选择 + 视频设置 + Send按钮 */}
       {!isInputNode && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px', padding: '0 4px' }}>
           {/* 模型选择 */}
@@ -462,6 +484,43 @@ const AINode = ({
         </div>
       )}
 
+      {/* 图片分割设置按钮 - 仅对图片输入节点显示 */}
+      {isImageInputNode && (
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', padding: '0 4px' }}>
+          <button
+            type="button"
+            className="nodrag nopan"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowSplitSettings(!showSplitSettings);
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+            style={{
+              backgroundColor: showSplitSettings
+                ? '#60a5fa'
+                : '#475569',
+              border: showSplitSettings
+                ? '2px solid #60a5fa'
+                : '1px solid #64748b',
+              borderRadius: '4px',
+              color: '#ffffff',
+              cursor: 'pointer',
+              fontSize: '10px',
+              padding: '4px 6px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '2px',
+              width: '100%',
+              height: '24px'
+            }}
+          >
+            <span>✂️ 分割</span>
+            <span style={{ fontSize: '8px' }}>{showSplitSettings ? '▼' : '▶'}</span>
+          </button>
+        </div>
+      )}
+
       {!isInputNode && (
         <div style={nodeStyles.textInputSection}>
           <span style={nodeStyles.textInputLabel}>Prompt:</span>
@@ -533,14 +592,60 @@ const AINode = ({
       {shouldShowImagePreviewContainer && (
         <div style={nodeStyles.previewContainer}>
           {data.preview ? (
-            <img src={data.preview} alt="Preview" style={nodeStyles.previewImage} />
+            <>
+              {isImageInputNode && data.splits && data.splits.length > 1 ? (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${data.splitCols || 1}, 1fr)`,
+                  gap: '2px',
+                  width: '100%'
+                }}>
+                  {data.splits.map((split) => (
+                    <div
+                      key={split.index}
+                      style={{
+                        position: 'relative',
+                        width: '100%',
+                        aspectRatio: `${split.width}/${split.height}`,
+                        border: '1px solid rgba(255,255,255,0.2)'
+                      }}
+                    >
+                      <img
+                        src={split.data}
+                        alt={`Split ${split.label}`}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover'
+                        }}
+                      />
+                      <div style={{
+                        position: 'absolute',
+                        bottom: '2px',
+                        left: '2px',
+                        backgroundColor: 'rgba(0,0,0,0.7)',
+                        color: '#fff',
+                        fontSize: '10px',
+                        padding: '1px 4px',
+                        borderRadius: '2px',
+                        pointerEvents: 'none'
+                      }}>
+                        {split.label}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <img src={data.preview} alt="Preview" style={nodeStyles.previewImage} />
+              )}
+              {nodeType !== 'image-input' && (
+                <div style={nodeStyles.previewFooter} title={data.fileName || previewFooterText}>
+                  {data.fileName ? displayFileName : previewFooterText}
+                </div>
+              )}
+            </>
           ) : (
             <div style={nodeStyles.previewPlaceholder}>No image yet</div>
-          )}
-          {nodeType !== 'image-input' && (
-            <div style={nodeStyles.previewFooter} title={data.fileName || previewFooterText}>
-              {data.fileName ? displayFileName : previewFooterText}
-            </div>
           )}
         </div>
       )}
@@ -591,13 +696,42 @@ const AINode = ({
         isConnectable={isConnectable}
         style={{ ...nodeStyles.handle.base, ...nodeStyles.handle.target }}
       />
-      <Handle
-        type="source"
-        position="right"
-        id="output"
-        isConnectable={isConnectable}
-        style={{ ...nodeStyles.handle.base, ...nodeStyles.handle.source }}
-      />
+      {/* 图片输入节点：根据分割数量生成多个输出 Handle */}
+      {isImageInputNode && data.splitRows > 0 && data.splitCols > 0 && data.preview ? (
+        Array.from({ length: data.splitRows * data.splitCols }).map((_, index) => {
+          const row = Math.floor(index / data.splitCols);
+          const col = index % data.splitCols;
+          const totalParts = data.splitRows * data.splitCols;
+          // 计算位置：从上到下，从左到右分布在右侧
+          const topPercent = ((row * data.splitCols + col + 1) / (totalParts + 1)) * 100;
+          return (
+            <Handle
+              key={`split-${index}`}
+              type="source"
+              position="right"
+              id={`output-${index}`}
+              isConnectable={isConnectable}
+              style={{
+                ...nodeStyles.handle.base,
+                ...nodeStyles.handle.source,
+                top: `${topPercent}%`,
+                right: -4,
+                width: 10,
+                height: 10,
+                backgroundColor: '#60a5fa'
+              }}
+            />
+          );
+        })
+      ) : (
+        <Handle
+          type="source"
+          position="right"
+          id="output"
+          isConnectable={isConnectable}
+          style={{ ...nodeStyles.handle.base, ...nodeStyles.handle.source }}
+        />
+      )}
 
       <style>{animations}</style>
     </div>
@@ -715,6 +849,136 @@ const AINode = ({
                   {option.label}
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 图片分割设置面板 - 紧贴节点右侧 */}
+      {isImageInputNode && showSplitSettings && nodeRef.current && (
+        <div
+          style={{
+            position: 'absolute',
+            left: `${nodeRef.current.offsetWidth + 10}px`,
+            top: '0px',
+            width: '240px',
+            padding: '16px',
+            borderRadius: 8,
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            backgroundColor: 'rgba(30, 41, 59, 0.95)',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
+            zIndex: 1000,
+            backdropFilter: 'blur(8px)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div style={{
+            fontSize: '13px',
+            fontWeight: 600,
+            color: '#ffffff',
+            marginBottom: '12px',
+            paddingBottom: '8px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+          }}>图片分割</div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{
+              fontSize: '11px',
+              color: 'rgba(255, 255, 255, 0.7)',
+              marginBottom: '8px',
+              fontWeight: 500
+            }}>行数（横向分割）</div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={splitRows}
+                onChange={(e) => handleSplitRowsChange(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="nodrag nopan"
+                style={{
+                  flex: 1,
+                  padding: '8px 12px',
+                  borderRadius: 4,
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  color: '#ffffff',
+                  fontSize: '12px',
+                  outline: 'none'
+                }}
+              />
+              <span style={{
+                fontSize: '11px',
+                color: 'rgba(255, 255, 255, 0.5)',
+                minWidth: '60px'
+              }}>
+                {splitRows} 行
+              </span>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{
+              fontSize: '11px',
+              color: 'rgba(255, 255, 255, 0.7)',
+              marginBottom: '8px',
+              fontWeight: 500
+            }}>列数（纵向分割）</div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={splitCols}
+                onChange={(e) => handleSplitColsChange(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="nodrag nopan"
+                style={{
+                  flex: 1,
+                  padding: '8px 12px',
+                  borderRadius: 4,
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  color: '#ffffff',
+                  fontSize: '12px',
+                  outline: 'none'
+                }}
+              />
+              <span style={{
+                fontSize: '11px',
+                color: 'rgba(255, 255, 255, 0.5)',
+                minWidth: '60px'
+              }}>
+                {splitCols} 列
+              </span>
+            </div>
+          </div>
+
+          <div style={{
+            padding: '10px',
+            borderRadius: 4,
+            backgroundColor: 'rgba(96, 165, 250, 0.1)',
+            border: '1px solid rgba(96, 165, 250, 0.3)'
+          }}>
+            <div style={{
+              fontSize: '11px',
+              color: 'rgba(255, 255, 255, 0.8)',
+              lineHeight: '1.5'
+            }}>
+              将图片分割为 <strong>{splitRows * splitCols}</strong> 部分<br/>
+              从左到右，从上到下排序
             </div>
           </div>
         </div>
