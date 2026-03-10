@@ -81,10 +81,14 @@ export const useNodeOperations = () => {
           fileName: file.name,
           fileSize: file.size,
           imageUrl: '',
-          serverPath // 保存服务器相对路径
+          serverPath, // 保存服务器相对路径
+          splits: undefined // 清除旧的分割数据
         }
       };
     }));
+
+    // 通知应用清除分割状态（如果有机制的话）
+    // 目前 splits: undefined 会被 useEffect 检测到并清除
 
     setSelectedNode((prev) => {
       if (!prev || prev.id !== nodeId) return prev;

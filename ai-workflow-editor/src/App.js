@@ -105,7 +105,8 @@ const syncImageInputPreviewForGenerativeNodes = (allNodes, allEdges) => {
           // 提取分割索引
           const splitIndex = parseInt(sourceHandle.replace('output-', ''), 10);
           const splits = sourceNode.data.splits;
-          if (splits && splits[splitIndex]) {
+          // 检查索引是否有效
+          if (splits && splitIndex >= 0 && splitIndex < splits.length && splits[splitIndex]) {
             const split = splits[splitIndex];
             nextInputPreviews.push({
               nodeId: sourceNode.id,
@@ -117,6 +118,7 @@ const syncImageInputPreviewForGenerativeNodes = (allNodes, allEdges) => {
               splitLabel: split.label
             });
           }
+          // 如果索引无效，跳过这个连接（预览不会显示）
         } else {
           // 如果没有指定具体的输出 handle，使用整个图片
           if (sourceNode.data?.preview) {
@@ -293,6 +295,9 @@ const App = () => {
   // 保存文件输入框的 ref
   const fileInputRef = useRef(null);
 
+  // 跟踪正在分割的节点，避免重复分割
+  const splittingNodesRef = useRef(new Set());
+
   // 自动保存相关状态
   const [saveFilePath, setSaveFilePath] = useState(null);
   const [saveFileHandle, setSaveFileHandle] = useState(null); // 保存文件句柄，用于覆盖保存
@@ -356,7 +361,7 @@ const App = () => {
       .map((node) => {
         let content = '';
         if (node.type === 'image-input') {
-          content = node.data?.preview || '';
+          content = `${node.data?.preview || ''}:${node.data?.splitRows || 1}:${node.data?.splitCols || 1}:${node.data?.splits?.length || 0}`;
         } else if (node.type === 'video-input' || node.type === 'video-gen') {
           content = node.data?.lastFrame || '';
         } else if (node.type === 'image-gen') {
@@ -475,72 +480,92 @@ const App = () => {
 
   // 处理图片分割，计算每个分割区域的坐标
   const handleImageSplit = useCallback(async (nodeId) => {
-    setNodes((nds) => {
-      const node = nds.find((n) => n.id === nodeId);
-      if (!node || node.type !== 'image-input' || !node.data.preview) {
-        return nds;
-      }
+    // 检查是否正在分割该节点
+    if (splittingNodesRef.current.has(nodeId)) {
+      console.log('[handleImageSplit] 跳过，正在分割中:', nodeId);
+      return;
+    }
 
-      const { splitRows = 1, splitCols = 1, preview } = node.data;
-      const totalParts = splitRows * splitCols;
+    // 标记为正在分割
+    splittingNodesRef.current.add(nodeId);
 
-      // 如果是 1x1 或没有图片，清除分割数据
-      if (totalParts <= 1 || !preview) {
-        setNodeDataById(nodeId, { splits: undefined });
-        return nds;
-      }
+    // 使用最新的 nodes 状态
+    const node = nodesRef.current?.find((n) => n.id === nodeId);
+    if (!node || node.type !== 'image-input' || !node.data.preview) {
+      splittingNodesRef.current.delete(nodeId);
+      return;
+    }
 
-      // 异步处理分割
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
+    const { splitRows = 1, splitCols = 1, preview } = node.data;
+    const totalParts = splitRows * splitCols;
 
-      img.onload = () => {
-        const width = img.width;
-        const height = img.height;
-        const splitWidth = width / splitCols;
-        const splitHeight = height / splitRows;
+    console.log('[handleImageSplit] 开始分割:', nodeId, { splitRows, splitCols, totalParts, hasPreview: !!preview });
 
-        // 生成每个分割区域的坐标信息
-        const splits = [];
-        for (let row = 0; row < splitRows; row++) {
-          for (let col = 0; col < splitCols; col++) {
-            const index = row * splitCols + col;
-            const x = col * splitWidth;
-            const y = row * splitHeight;
+    // 如果是 1x1 或没有图片，清除分割数据
+    if (totalParts <= 1 || !preview) {
+      splittingNodesRef.current.delete(nodeId);
+      setNodeDataById(nodeId, { splits: undefined });
+      return;
+    }
 
-            // 创建 canvas 裁剪分割区域
-            const canvas = document.createElement('canvas');
-            canvas.width = splitWidth;
-            canvas.height = splitHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, x, y, splitWidth, splitHeight, 0, 0, splitWidth, splitHeight);
+    // 异步处理分割
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
 
-            const splitImageData = canvas.toDataURL('image/jpeg', 0.9);
+    img.onload = () => {
+      const width = img.width;
+      const height = img.height;
+      const splitWidth = width / splitCols;
+      const splitHeight = height / splitRows;
 
-            splits.push({
-              index,
-              x,
-              y,
-              width: splitWidth,
-              height: splitHeight,
-              data: splitImageData,
-              label: `${row + 1}-${col + 1}`
-            });
-          }
+      console.log('[handleImageSplit] 图片加载成功:', nodeId, { width, height, splitWidth, splitHeight });
+
+      // 生成每个分割区域的坐标信息
+      const splits = [];
+      for (let row = 0; row < splitRows; row++) {
+        for (let col = 0; col < splitCols; col++) {
+          const index = row * splitCols + col;
+          const x = col * splitWidth;
+          const y = row * splitHeight;
+
+          // 创建 canvas 裁剪分割区域
+          const canvas = document.createElement('canvas');
+          canvas.width = splitWidth;
+          canvas.height = splitHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, x, y, splitWidth, splitHeight, 0, 0, splitWidth, splitHeight);
+
+          const splitImageData = canvas.toDataURL('image/jpeg', 0.9);
+
+          splits.push({
+            index,
+            x,
+            y,
+            width: splitWidth,
+            height: splitHeight,
+            data: splitImageData,
+            label: `${row + 1}-${col + 1}`
+          });
         }
+      }
 
-        // 更新节点数据
-        setNodeDataById(nodeId, { splits });
-      };
+      console.log('[handleImageSplit] 分割完成:', nodeId, { count: splits.length });
+      // 更新节点数据
+      setNodeDataById(nodeId, { splits });
+      // 移除标记
+      setTimeout(() => {
+        splittingNodesRef.current.delete(nodeId);
+      }, 100);
+    };
 
-      img.onerror = () => {
-        console.warn('Failed to load image for splitting:', nodeId);
-      };
 
-      img.src = preview;
-      return nds;
-    });
-  }, [setNodes, setNodeDataById]);
+    img.onerror = () => {
+      console.warn('Failed to load image for splitting:', nodeId);
+      splittingNodesRef.current.delete(nodeId);
+    };
+
+    img.src = preview;
+  }, [setNodeDataById]);
 
   // 当分割设置变化时，重新计算分割
   useEffect(() => {
@@ -548,19 +573,70 @@ const App = () => {
       if (node.type === 'image-input' && node.data.preview) {
         const { splitRows = 1, splitCols = 1 } = node.data;
         const totalParts = splitRows * splitCols;
+        const hasSplits = !!node.data.splits;
+        const shouldHaveSplits = totalParts > 1;
 
-        // 如果是 1x1，清除分割数据
-        if (totalParts <= 1) {
-          if (node.data.splits) {
-            setNodeDataById(node.id, { splits: undefined });
+        // 检查是否需要重新分割
+        if (shouldHaveSplits) {
+          const expectedCount = splitRows * splitCols;
+          const actualCount = node.data.splits?.length || 0;
+          // 只在数量不匹配时执行分割
+          if (actualCount !== expectedCount) {
+            // 先删除连接到无效 handle 的边
+            setEdges((eds) => {
+              const nodeEdges = eds.filter(e => e.source === node.id);
+              const validHandleIds = new Set();
+              for (let i = 0; i < expectedCount; i++) {
+                validHandleIds.add(`output-${i}`);
+              }
+              // 保留有效的边（output 或有效的 output-i）
+              const validEdges = eds.filter(e => {
+                if (e.source !== node.id) return true;
+                if (!e.sourceHandle || e.sourceHandle === 'output') return true;
+                return validHandleIds.has(e.sourceHandle);
+              });
+              if (validEdges.length !== eds.length) {
+                console.log('[Split] Removed invalid edges for node:', node.id, {
+                  oldCount: eds.filter(e => e.source === node.id).length,
+                  newCount: validEdges.filter(e => e.source === node.id).length
+                });
+              }
+              return validEdges;
+            });
+            handleImageSplit(node.id);
           }
-        } else {
-          // 否则重新计算分割
-          handleImageSplit(node.id);
+        }
+        // 如果不应该有分割但有 splits，清除
+        else if (hasSplits) {
+          // 删除所有连接到 split handles 的边，只保留主 output
+          setEdges((eds) => {
+            const validEdges = eds.filter(e => {
+              if (e.source !== node.id) return true;
+              // 只保留没有 sourceHandle 或 sourceHandle === 'output' 的边
+              return !e.sourceHandle || e.sourceHandle === 'output';
+            });
+            if (validEdges.length !== eds.length) {
+              console.log('[Split] Cleared split edges for node:', node.id);
+            }
+            return validEdges;
+          });
+          setNodeDataById(node.id, { splits: undefined });
         }
       }
     });
-  }, [nodes]);
+  }, [
+    // 只依赖与分割相关的字段
+    nodes.map(n => {
+      if (n.type !== 'image-input') return null;
+      return JSON.stringify({
+        id: n.id,
+        splitRows: n.data?.splitRows || 1,
+        splitCols: n.data?.splitCols || 1,
+        preview: n.data?.preview,
+        splitsCount: n.data?.splits?.length || 0
+      });
+    }).filter(Boolean).join('|')
+  ]);
 
   // 键盘删除快捷键
   useEffect(() => {
