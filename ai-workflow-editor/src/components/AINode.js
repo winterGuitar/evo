@@ -705,22 +705,41 @@ const AINode = ({
           // 计算位置：从上到下，从左到右分布在右侧
           const topPercent = ((row * data.splitCols + col + 1) / (totalParts + 1)) * 100;
           return (
-            <Handle
-              key={`split-${index}`}
-              type="source"
-              position="right"
-              id={`output-${index}`}
-              isConnectable={isConnectable}
-              style={{
-                ...nodeStyles.handle.base,
-                ...nodeStyles.handle.source,
-                top: `${topPercent}%`,
-                right: -4,
-                width: 10,
-                height: 10,
-                backgroundColor: '#60a5fa'
-              }}
-            />
+            <Fragment key={`split-${index}`}>
+              <Handle
+                type="source"
+                position="right"
+                id={`output-${index}`}
+                isConnectable={isConnectable}
+                style={{
+                  ...nodeStyles.handle.base,
+                  ...nodeStyles.handle.source,
+                  top: `${topPercent}%`,
+                  right: -4,
+                  width: 10,
+                  height: 10,
+                  backgroundColor: '#60a5fa'
+                }}
+              />
+              {/* 编号标签 */}
+              <div
+                style={{
+                  position: 'absolute',
+                  right: '8px',
+                  top: `calc(${topPercent}% - 7px)`,
+                  backgroundColor: '#60a5fa',
+                  color: '#fff',
+                  fontSize: '9px',
+                  fontWeight: 600,
+                  padding: '1px 4px',
+                  borderRadius: '3px',
+                  whiteSpace: 'nowrap',
+                  pointerEvents: 'none'
+                }}
+              >
+                {row + 1}-{col + 1}
+              </div>
+            </Fragment>
           );
         })
       ) : (
