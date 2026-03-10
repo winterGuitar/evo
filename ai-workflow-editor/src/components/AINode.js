@@ -484,9 +484,9 @@ const AINode = ({
         </div>
       )}
 
-      {/* 图片分割设置按钮 - 仅对图片输入节点显示 */}
+      {/* 图片分割设置和选择文件按钮 - 仅对图片输入节点显示，放在一排 */}
       {isImageInputNode && (
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', padding: '0 4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', padding: '0 4px' }}>
           <button
             type="button"
             className="nodrag nopan"
@@ -511,13 +511,43 @@ const AINode = ({
               alignItems: 'center',
               justifyContent: 'center',
               gap: '2px',
-              width: '100%',
+              flex: 1,
               height: '24px'
             }}
           >
             <span>✂️ 分割</span>
             <span style={{ fontSize: '8px' }}>{showSplitSettings ? '▼' : '▶'}</span>
           </button>
+          <button
+            type="button"
+            className="nodrag nopan"
+            onClick={handleOpenFilePicker}
+            onMouseDown={(event) => event.stopPropagation()}
+            style={{
+              backgroundColor: '#475569',
+              border: '1px solid #64748b',
+              borderRadius: '4px',
+              color: '#ffffff',
+              cursor: 'pointer',
+              fontSize: '10px',
+              padding: '4px 6px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flex: 1,
+              height: '24px'
+            }}
+          >
+            选择图片
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={nodeStyles.hiddenFileInput}
+            onChange={handleInputFileChange}
+            tabIndex={-1}
+          />
         </div>
       )}
 
@@ -567,7 +597,7 @@ const AINode = ({
         </div>
       )}
 
-      {isInputNode && (
+      {isInputNode && !isImageInputNode && (
         <div style={nodeStyles.filePickerSection}>
           <button
             type="button"

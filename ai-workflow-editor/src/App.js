@@ -484,7 +484,9 @@ const App = () => {
       const { splitRows = 1, splitCols = 1, preview } = node.data;
       const totalParts = splitRows * splitCols;
 
+      // 如果是 1x1 或没有图片，清除分割数据
       if (totalParts <= 1 || !preview) {
+        setNodeDataById(nodeId, { splits: undefined });
         return nds;
       }
 
@@ -543,11 +545,22 @@ const App = () => {
   // 当分割设置变化时，重新计算分割
   useEffect(() => {
     nodes.forEach(node => {
-      if (node.type === 'image-input' && node.data.preview && node.data.splitRows && node.data.splitCols) {
-        handleImageSplit(node.id);
+      if (node.type === 'image-input' && node.data.preview) {
+        const { splitRows = 1, splitCols = 1 } = node.data;
+        const totalParts = splitRows * splitCols;
+
+        // 如果是 1x1，清除分割数据
+        if (totalParts <= 1) {
+          if (node.data.splits) {
+            setNodeDataById(node.id, { splits: undefined });
+          }
+        } else {
+          // 否则重新计算分割
+          handleImageSplit(node.id);
+        }
       }
     });
-  }, [nodes, handleImageSplit]);
+  }, [nodes]);
 
   // 键盘删除快捷键
   useEffect(() => {
