@@ -1946,6 +1946,18 @@ const App = () => {
                         />
                       )
                     )}
+                    <div style={{
+                      fontSize: 10,
+                      color: colors.text.light,
+                      textAlign: 'center',
+                      marginTop: 2,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      maxWidth: '100px'
+                    }} title={item.label}>
+                      {item.label && item.label.length > 6 ? item.label.slice(0, 6) + '…' : item.label}
+                    </div>
                   </div>
                 ))}
                 {timelineItems.length === 0 && (
