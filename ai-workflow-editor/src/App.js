@@ -315,21 +315,21 @@ const App = () => {
   const [dragOverTimelineIndex, setDragOverTimelineIndex] = useState(null);
 
   // 计算视频时间轴项目（视频输入节点和视频生成节点，按时间轴顺序排序）
+  // 使用 Map 缓存索引以优化排序性能
   const timelineItems = useMemo(() => {
     const videoNodes = nodes.filter((node) =>
       ['video-input', 'video-gen'].includes(node.type) &&
       (node.data?.preview || node.data?.lastFrame)
     );
 
+    // 创建索引 Map 优化查找
+    const orderMap = new Map(timelineOrder.map((id, index) => [id, index]));
+
     return videoNodes
       .sort((a, b) => {
-        // 使用 timelineOrder 决定顺序
-        const indexA = timelineOrder.indexOf(a.id);
-        const indexB = timelineOrder.indexOf(b.id);
-        if (indexA !== -1 && indexB !== -1) {
-          return indexA - indexB;
-        }
-        return indexA !== -1 ? -1 : (indexB !== -1 ? 1 : 0);
+        const indexA = orderMap.has(a.id) ? orderMap.get(a.id) : Infinity;
+        const indexB = orderMap.has(b.id) ? orderMap.get(b.id) : Infinity;
+        return indexA - indexB;
       })
       .map((node) => ({
         id: node.id,
@@ -357,26 +357,34 @@ const App = () => {
   } = useTimeline(timelineItems);
 
   // 初始化 timelineOrder：当 timelineItems 变化时，更新 timelineOrder
+  // 使用函数式更新避免依赖 timelineOrder
   useEffect(() => {
-    if (timelineItems.length > 0 && timelineOrder.length === 0) {
-      // 首次加载或清空后，使用节点顺序初始化
-      setTimelineOrder(timelineItems.map(item => item.id));
-    } else if (timelineItems.length > 0) {
-      // 检查是否有新节点被添加到时间轴
+    setTimelineOrder((prevOrder) => {
+      if (timelineItems.length === 0) return prevOrder;
+
       const currentIds = timelineItems.map(item => item.id);
-      const newIds = currentIds.filter(id => !timelineOrder.includes(id));
-      if (newIds.length > 0) {
+      const existingIds = new Set(prevOrder);
+
+      // 检查是否有新节点被添加到时间轴
+      const newIds = currentIds.filter(id => !existingIds.has(id));
+
+      if (prevOrder.length === 0) {
+        // 首次加载，使用节点顺序初始化
+        return currentIds;
+      } else if (newIds.length > 0) {
         // 添加新节点到末尾
-        setTimelineOrder(prev => [...prev, ...newIds]);
+        return [...prevOrder, ...newIds];
       }
-    }
-  }, [timelineItems, timelineOrder, setTimelineOrder]);
+
+      return prevOrder;
+    });
+  }, [timelineItems]);
 
   // 拖拽处理函数
   const handleTimelineDragStart = useCallback((e, index) => {
     setDraggingTimelineIndex(index);
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', index);
+    e.dataTransfer.setData('text/plain', String(index));
   }, []);
 
   const handleTimelineDragOver = useCallback((e, index) => {
@@ -394,16 +402,17 @@ const App = () => {
     const fromIndex = draggingTimelineIndex;
 
     if (fromIndex !== null && fromIndex !== toIndex) {
-      // 更新 timelineOrder
-      const newOrder = [...timelineOrder];
-      const [removed] = newOrder.splice(fromIndex, 1);
-      newOrder.splice(toIndex, 0, removed);
-      setTimelineOrder(newOrder);
+      setTimelineOrder((prevOrder) => {
+        const newOrder = [...prevOrder];
+        const [removed] = newOrder.splice(fromIndex, 1);
+        newOrder.splice(toIndex, 0, removed);
+        return newOrder;
+      });
     }
 
     setDraggingTimelineIndex(null);
     setDragOverTimelineIndex(null);
-  }, [draggingTimelineIndex, timelineOrder, setTimelineOrder]);
+  }, [draggingTimelineIndex]);
 
   const handleTimelineDragEnd = useCallback(() => {
     setDraggingTimelineIndex(null);

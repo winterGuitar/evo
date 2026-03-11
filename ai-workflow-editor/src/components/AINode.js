@@ -2,7 +2,6 @@
 import { Handle } from 'reactflow';
 import { nodeStyles, animations, colors } from '../styles';
 import { getNodeColor, getNodeIcon, AI_MODELS } from '../constants';
-import { getModelInfo } from '../utils';
 
 const AINode = ({
   data,
@@ -36,7 +35,6 @@ const AINode = ({
   const modelOptions = isGenerativeNode ? (AI_MODELS[nodeType] || []) : [];
   const hasSelectedModel = modelOptions.some((model) => model.id === data.model);
   const selectedModelId = hasSelectedModel ? data.model : (modelOptions[0]?.id || '');
-  const currentModel = getModelInfo(selectedModelId, modelOptions);
   const inputPreviews = Array.isArray(data.inputPreviews)
     ? data.inputPreviews.filter((item) => item?.preview)
     : [];
