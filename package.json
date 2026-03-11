@@ -1,0 +1,11 @@
+{
+  "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
+    "multer": "^2.0.2"
+  },
+  "devDependencies": {
+    "@craco/craco": "^7.1.0",
+    "react-app-rewired": "^2.2.1"
+  }
+}
