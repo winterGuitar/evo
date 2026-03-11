@@ -29,6 +29,7 @@ import ContextMenu from './components/ContextMenu';
 import DisconnectableEdge from './components/DisconnectableEdge';
 import ChatPanel from './components/ChatPanel';
 import AssetsPanel from './components/AssetsPanel';
+import ApiKeyPanel from './components/ApiKeyPanel';
 import {
   suppressResizeObserverWarning,
   createNewNode,
@@ -295,6 +296,9 @@ const App = () => {
   const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
   const serverUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:3001';
 
+  // API 密钥面板状态
+  const [isApiKeyPanelOpen, setIsApiKeyPanelOpen] = useState(false);
+
   // 保存文件输入框的 ref
   const fileInputRef = useRef(null);
 
@@ -309,6 +313,25 @@ const App = () => {
 
   // 使用自定义 Hooks
   const { saveDataToFileWithCustomPath, saveToExistingFile, loadDataFromFile } = useFileStorage();
+
+  // 保存 API 密钥到后端
+  const handleSaveApiKeys = useCallback(async (apiKeys) => {
+    try {
+      const response = await fetch(`${serverUrl}/api/config/keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(apiKeys)
+      });
+      const result = await response.json();
+      if (result.code === 0) {
+        console.log('API 密钥已同步到后端');
+      } else {
+        console.error('同步 API 密钥失败:', result.message);
+      }
+    } catch (error) {
+      console.error('同步 API 密钥失败:', error);
+    }
+  }, [serverUrl]);
 
   // 时间轴卡片顺序状态
   const [timelineOrder, setTimelineOrder] = useState([]);
@@ -1807,6 +1830,15 @@ const App = () => {
               >
                 💬 豆包助手
               </button>
+              <button
+                onClick={() => setIsApiKeyPanelOpen(true)}
+                style={{
+                  ...canvasStyles.secondaryButton,
+                  backgroundColor: isApiKeyPanelOpen ? '#3b82f6' : 'rgba(59, 130, 246, 0.1)'
+                }}
+              >
+                🔑 API 密钥
+              </button>
             </div>
           </Panel>
 
@@ -2058,6 +2090,13 @@ const App = () => {
           onClose={() => setIsChatPanelOpen(false)}
           serverUrl={serverUrl}
         />
+
+        {isApiKeyPanelOpen && (
+          <ApiKeyPanel
+            onClose={() => setIsApiKeyPanelOpen(false)}
+            onSave={handleSaveApiKeys}
+          />
+        )}
       </div>
     </div>
   );

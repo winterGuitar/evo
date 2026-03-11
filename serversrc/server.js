@@ -47,6 +47,43 @@ console.log('万相服务初始化完成');
 const doubaoService = new DoubaoService(BASE_CONFIG.doubaoApiKey);
 console.log('豆包服务初始化完成');
 
+/**
+ * 重新加载环境变量并初始化服务
+ * 用于在更新 .env 文件后重新加载配置
+ */
+async function reloadEnvAndServices() {
+  console.log('正在重新加载环境变量...');
+
+  // 重新加载 .env 文件
+  const envFilePath = path.join(__dirname, '.env');
+  if (fs.existsSync(envFilePath)) {
+    const envContent = fs.readFileSync(envFilePath, 'utf8');
+    const lines = envContent.split('\n');
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (trimmedLine && !trimmedLine.startsWith('#')) {
+        const [key, ...valueParts] = trimmedLine.split('=');
+        if (key && valueParts.length > 0) {
+          const value = valueParts.join('=').trim();
+          process.env[key] = value;
+          console.log(`已加载环境变量: ${key}=***`);
+        }
+      }
+    }
+  }
+
+  // 更新配置
+  if (process.env.DASHSCOPE_API_KEY) {
+    BASE_CONFIG.dashScopeApiKey = process.env.DASHSCOPE_API_KEY;
+  }
+  if (process.env.DOUBAO_API_KEY) {
+    BASE_CONFIG.doubaoApiKey = process.env.DOUBAO_API_KEY;
+  }
+
+  console.log('环境变量重新加载完成');
+}
+
 // ===================== 文件哈希缓存 =====================
 // 文件缓存结构：{ 文件路径: { hash: SHA256, size: 文件大小, mtime: 修改时间 } }
 const fileHashCache = new Map();
@@ -834,6 +871,95 @@ app.delete('/api/ti2v/delete', async (req, res) => {
     res.status(500).json({
       code: -1,
       message: `删除文件失败：${error.message}`,
+      data: null
+    });
+  }
+});
+
+/**
+ * 接口13：更新 API 密钥
+ * POST /api/config/keys
+ * 请求体：{ jimengAccessKeyId, jimengSecretAccessKey, dashscopeApiKey, doubaoApiKey }
+ * 响应：{ code, message, data: { updated: true } }
+ */
+app.post('/api/config/keys', async (req, res) => {
+  try {
+    const {
+      jimengAccessKeyId,
+      jimengSecretAccessKey,
+      dashscopeApiKey,
+      doubaoApiKey
+    } = req.body;
+
+    // 读取现有的 .env 文件内容
+    const envFilePath = path.join(__dirname, '.env');
+    let envContent = '';
+    if (fs.existsSync(envFilePath)) {
+      envContent = fs.readFileSync(envFilePath, 'utf8');
+    }
+
+    // 更新或添加即梦密钥
+    if (jimengAccessKeyId) {
+      if (envContent.includes('JIMENG_ACCESS_KEY_ID=')) {
+        envContent = envContent.replace(/JIMENG_ACCESS_KEY_ID=.*/, `JIMENG_ACCESS_KEY_ID=${jimengAccessKeyId}`);
+      } else {
+        envContent += `\nJIMENG_ACCESS_KEY_ID=${jimengAccessKeyId}`;
+      }
+      process.env.JIMENG_ACCESS_KEY_ID = jimengAccessKeyId;
+      console.log('即梦 Access Key ID 已更新');
+    }
+
+    if (jimengSecretAccessKey) {
+      if (envContent.includes('JIMENG_SECRET_ACCESS_KEY=')) {
+        envContent = envContent.replace(/JIMENG_SECRET_ACCESS_KEY=.*/, `JIMENG_SECRET_ACCESS_KEY=${jimengSecretAccessKey}`);
+      } else {
+        envContent += `\nJIMENG_SECRET_ACCESS_KEY=${jimengSecretAccessKey}`;
+      }
+      process.env.JIMENG_SECRET_ACCESS_KEY = jimengSecretAccessKey;
+      console.log('即梦 Secret Access Key 已更新');
+    }
+
+    // 更新或添加万相密钥
+    if (dashscopeApiKey) {
+      if (envContent.includes('DASHSCOPE_API_KEY=')) {
+        envContent = envContent.replace(/DASHSCOPE_API_KEY=.*/, `DASHSCOPE_API_KEY=${dashscopeApiKey}`);
+      } else {
+        envContent += `\nDASHSCOPE_API_KEY=${dashscopeApiKey}`;
+      }
+      process.env.DASHSCOPE_API_KEY = dashscopeApiKey;
+      BASE_CONFIG.dashScopeApiKey = dashscopeApiKey;
+      console.log('万相密钥已更新');
+    }
+
+    // 更新或添加豆包密钥
+    if (doubaoApiKey) {
+      if (envContent.includes('DOUBAO_API_KEY=')) {
+        envContent = envContent.replace(/DOUBAO_API_KEY=.*/, `DOUBAO_API_KEY=${doubaoApiKey}`);
+      } else {
+        envContent += `\nDOUBAO_API_KEY=${doubaoApiKey}`;
+      }
+      process.env.DOUBAO_API_KEY = doubaoApiKey;
+      BASE_CONFIG.doubaoApiKey = doubaoApiKey;
+      console.log('豆包密钥已更新');
+    }
+
+    // 写入 .env 文件
+    fs.writeFileSync(envFilePath, envContent.trim() + '\n', 'utf8');
+    console.log('.env 文件已更新');
+
+    // 重新加载环境变量和服务配置
+    await reloadEnvAndServices();
+
+    res.status(200).json({
+      code: 0,
+      message: "API 密钥更新成功",
+      data: { updated: true }
+    });
+  } catch (error) {
+    console.error('更新 API 密钥失败:', error);
+    res.status(500).json({
+      code: -1,
+      message: `更新 API 密钥失败：${error.message}`,
       data: null
     });
   }
