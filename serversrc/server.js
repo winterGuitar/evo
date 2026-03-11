@@ -754,6 +754,91 @@ app.get('/api/chat/:responseId', async (req, res) => {
   }
 });
 
+/**
+ * 接口12：删除视频文件
+ * DELETE /api/ti2v/delete
+ * 请求体：{ path: "/ti2v_videos/xxx.mp4" }
+ * 响应：{ code, message, data: { deleted: true/false } }
+ */
+app.delete('/api/ti2v/delete', async (req, res) => {
+  try {
+    const { path: deletePath } = req.body;
+
+    console.log('=== 删除请求 ===');
+    console.log('接收到的路径:', deletePath);
+    console.log('downloadDir:', BASE_CONFIG.downloadDir);
+
+    if (!deletePath) {
+      return res.status(400).json({
+        code: -1,
+        message: "缺少必要参数：path",
+        data: null
+      });
+    }
+
+    // 安全检查：确保路径在 ti2v_videos 目录下
+    if (!deletePath.startsWith('/ti2v_videos/')) {
+      return res.status(400).json({
+        code: -1,
+        message: "无效的文件路径",
+        data: null
+      });
+    }
+
+    // 转换为绝对路径
+    const relativePath = deletePath.replace('/ti2v_videos/', '');
+    const filePath = path.join(BASE_CONFIG.downloadDir, relativePath);
+    console.log('完整文件路径:', filePath);
+
+    // 检查文件是否存在
+    if (!fs.existsSync(filePath)) {
+      console.log('文件不存在!');
+      return res.status(404).json({
+        code: -1,
+        message: "文件不存在: " + filePath,
+        data: null
+      });
+    }
+
+    // 确保是文件而非目录
+    const stats = fs.statSync(filePath);
+    if (stats.isDirectory()) {
+      return res.status(400).json({
+        code: -1,
+        message: "不能删除目录",
+        data: null
+      });
+    }
+
+    // 删除文件
+    fs.unlinkSync(filePath);
+
+    // 从缓存中移除
+    fileHashCache.delete(filePath);
+
+    // 更新缓存文件
+    saveCacheToFile();
+
+    console.log(`文件已删除: ${relativePath}`);
+
+    res.status(200).json({
+      code: 0,
+      message: "文件删除成功",
+      data: {
+        deleted: true,
+        path: relativePath
+      }
+    });
+  } catch (error) {
+    console.error('删除文件失败:', error);
+    res.status(500).json({
+      code: -1,
+      message: `删除文件失败：${error.message}`,
+      data: null
+    });
+  }
+});
+
 // ===================== 6. 启动服务 =====================
 app.listen(PORT, async () => {
   // 提前创建下载目录

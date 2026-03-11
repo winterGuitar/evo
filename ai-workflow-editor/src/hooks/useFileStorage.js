@@ -38,7 +38,7 @@ export const useFileStorage = () => {
   /**
    * 保存数据到文件
    */
-  const saveDataToFile = useCallback(async (nodes, edges, filePath = null, timelineData = null) => {
+  const saveDataToFile = useCallback(async (nodes, edges, filePath = null, timelineData = null, assetsData = null) => {
     try {
       console.log('开始保存文件，节点数量:', nodes.length);
 
@@ -52,6 +52,7 @@ export const useFileStorage = () => {
         nodes: processedNodes,
         edges,
         timeline: timelineData,
+        assets: assetsData, // 添加资产数据
         filePath // 保存文件路径元数据
       };
       const jsonString = JSON.stringify(data, null, 2);
@@ -85,7 +86,7 @@ export const useFileStorage = () => {
    * 保存数据到文件（使用文件选择器指定位置和名称）
    * 返回 { fileName, fileHandle }
    */
-  const saveDataToFileWithCustomPath = useCallback(async (nodes, edges, timelineData = null) => {
+  const saveDataToFileWithCustomPath = useCallback(async (nodes, edges, timelineData = null, assetsData = null) => {
     try {
       console.log('开始保存文件，节点数量:', nodes.length);
 
@@ -99,6 +100,7 @@ export const useFileStorage = () => {
         nodes: processedNodes,
         edges,
         timeline: timelineData,
+        assets: assetsData, // 添加资产数据
       };
       const jsonString = JSON.stringify(data, null, 2);
       const blob = new Blob([jsonString], { type: 'application/json' });
@@ -158,7 +160,7 @@ export const useFileStorage = () => {
   /**
    * 覆盖保存到已有文件（使用 FileHandle）
    */
-  const saveToExistingFile = useCallback(async (nodes, edges, fileHandle, timelineData = null) => {
+  const saveToExistingFile = useCallback(async (nodes, edges, fileHandle, timelineData = null, assetsData = null) => {
     try {
       if (!fileHandle) {
         throw new Error('文件句柄不存在');
@@ -176,6 +178,7 @@ export const useFileStorage = () => {
         nodes: processedNodes,
         edges,
         timeline: timelineData,
+        assets: assetsData, // 添加资产数据
       };
       const jsonString = JSON.stringify(data, null, 2);
       const blob = new Blob([jsonString], { type: 'application/json' });

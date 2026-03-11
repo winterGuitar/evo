@@ -761,30 +761,45 @@ export const canvasStyles = {
     }
   },
 
+  emptyStateWrapper: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    pointerEvents: 'none'
+  },
+
   emptyState: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    padding: '32px 48px',
-    borderRadius: '16px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-    textAlign: 'center'
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    padding: '48px 64px',
+    borderRadius: '20px',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05)',
+    textAlign: 'center',
+    maxWidth: '600px',
+    backdropFilter: 'blur(10px)',
+    pointerEvents: 'auto'
   },
 
   emptyStateTitle: {
-    margin: '0 0 8px 0',
+    margin: '0 0 16px 0',
     color: colors.text.primary,
-    fontSize: 18
+    fontSize: 24,
+    fontWeight: 600
   },
 
   emptyStateText: {
     margin: 0,
-    color: colors.text.light,
-    fontSize: 14,
-    lineHeight: 1.6
+    color: colors.text.secondary,
+    fontSize: 15,
+    lineHeight: 2
   },
 
   emptyStateIcon: {
-    fontSize: 48,
-    marginBottom: 16
+    fontSize: 64,
+    marginBottom: 20
   },
 
   emptyStateHighlight: {
@@ -1117,7 +1132,7 @@ export const assetsPanelStyles = {
     left: '50%',
     transform: 'translate(-50%, -50%)',
     width: '900px',
-    maxHeight: '80vh',
+    height: '900px',
     backgroundColor: colors.background.primary,
     borderRadius: '16px',
     boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
@@ -1197,6 +1212,37 @@ export const assetsPanelStyles = {
     }
   },
 
+  dateDivider: {
+    height: '1px',
+    backgroundColor: colors.border.light,
+    margin: '32px 0'
+  },
+
+  tabs: {
+    display: 'flex',
+    gap: '12px',
+    padding: '16px 24px',
+    borderBottom: `1px solid ${colors.border.light}`
+  },
+
+  tabButton: {
+    padding: '10px 20px',
+    backgroundColor: colors.background.hover,
+    color: colors.text.secondary,
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease'
+  },
+
+  tabButtonActive: {
+    backgroundColor: colors.node.default,
+    color: 'white',
+    boxShadow: '0 2px 8px rgba(33, 150, 243, 0.3)'
+  },
+
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
@@ -1222,6 +1268,14 @@ export const assetsPanelStyles = {
     aspectRatio: '16/9',
     objectFit: 'cover',
     backgroundColor: '#000',
+    display: 'block'
+  },
+
+  image: {
+    width: '100%',
+    aspectRatio: '16/9',
+    objectFit: 'cover',
+    backgroundColor: colors.background.hover,
     display: 'block'
   },
 

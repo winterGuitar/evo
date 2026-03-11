@@ -367,7 +367,11 @@ const App = () => {
     addAsset,
     deleteAsset,
     clearAllAssets,
-    downloadAsset
+    clearVideoAssets,
+    clearImageAssets,
+    downloadAsset,
+    loadAssetsFromFile,
+    getAssetsData
   } = useAssets();
 
   // 包装合成视频函数，自动添加到资产列表
@@ -1538,20 +1542,24 @@ const App = () => {
     };
     console.log('保存时间轴数据:', timelineData);
 
+    // 准备资产数据
+    const assetsData = getAssetsData();
+    console.log('保存资产数据:', assetsData.length);
+
     try {
       let savedPath;
 
       if (saveFileHandle) {
         // 有文件句柄，直接覆盖保存
         console.log('覆盖保存到现有文件:', saveFilePath);
-        const result = await saveToExistingFile(nodes, edges, saveFileHandle, timelineData);
+        const result = await saveToExistingFile(nodes, edges, saveFileHandle, timelineData, assetsData);
         if (result) {
           savedPath = result.fileName;
         }
       } else {
         // 没有文件句柄，使用文件选择器
         console.log('使用文件选择器保存');
-        const result = await saveDataToFileWithCustomPath(nodes, edges, timelineData);
+        const result = await saveDataToFileWithCustomPath(nodes, edges, timelineData, assetsData);
         if (result) {
           savedPath = result.fileName;
           setSaveFileHandle(result.fileHandle);
@@ -1655,6 +1663,12 @@ const App = () => {
           setComposedVideoUrl(composedUrl);
           setComposedVideoServerPath(data.timeline.composedVideoUrl);
         }
+      }
+
+      // 恢复资产数据
+      if (data.assets) {
+        console.log('加载资产数据:', data.assets.length);
+        loadAssetsFromFile(data.assets);
       }
 
       // 记录文件路径和时间
@@ -1797,17 +1811,19 @@ const App = () => {
           </Panel>
 
           {nodes.length === 0 && (
-            <Panel position="center" style={canvasStyles.emptyState}>
-              <div style={canvasStyles.emptyStateIcon}>🎨</div>
-              <h3 style={canvasStyles.emptyStateTitle}>空白画布</h3>
-              <p style={canvasStyles.emptyStateText}>
-                从左侧拖拽节点开始构建工作流<br/>
-                直接拖拽图片或视频到画布生成输入节点<br/>
-                右键点击画布快速创建节点<br/>
-                点击"💾 保存文件"保存当前工作流<br/>
-                点击"📂 打开文件"加载已保存的工作流
-              </p>
-            </Panel>
+            <div style={canvasStyles.emptyStateWrapper}>
+              <div style={canvasStyles.emptyState}>
+                <div style={canvasStyles.emptyStateIcon}>🎨</div>
+                <h3 style={canvasStyles.emptyStateTitle}>空白画布</h3>
+                <p style={canvasStyles.emptyStateText}>
+                  从左侧拖拽节点开始构建工作流<br/>
+                  直接拖拽图片或视频到画布生成输入节点<br/>
+                  右键点击画布快速创建节点<br/>
+                  点击"💾 保存文件"保存当前工作流<br/>
+                  点击"📂 打开文件"加载已保存的工作流
+                </p>
+              </div>
+            </div>
           )}
           </ReactFlow>
 
@@ -2011,7 +2027,7 @@ const App = () => {
         {/* 资产面板 */}
         {isAssetsPanelOpen && (
           <>
-            <div 
+            <div
               style={assetsPanelStyles.overlay}
               onClick={() => setIsAssetsPanelOpen(false)}
             />
@@ -2020,7 +2036,8 @@ const App = () => {
               onClose={() => setIsAssetsPanelOpen(false)}
               onDownload={downloadAsset}
               onDelete={deleteAsset}
-              onClearAll={clearAllAssets}
+              onClearVideos={clearVideoAssets}
+              onClearImages={clearImageAssets}
             />
           </>
         )}
