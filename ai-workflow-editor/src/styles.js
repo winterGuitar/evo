@@ -69,21 +69,22 @@ export const nodeStyles = {
   
   header: (nodeColor) => ({
     position: 'absolute',
-    top: -10,
-    left: 12,
+    top: 0,
+    left: 0,
+    right: 0,
     backgroundColor: nodeColor,
     color: 'white',
     fontSize: 11,
     fontWeight: 600,
     padding: '4px 12px',
-    borderRadius: 20,
+    borderRadius: '12px 12px 0 0',
     letterSpacing: '0.5px',
-    textTransform: 'uppercase',
     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    maxWidth: '180px',
+    maxWidth: '100%',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
-    textOverflow: 'ellipsis'
+    textOverflow: 'ellipsis',
+    textAlign: 'center'
   }),
 
   deleteButton: {
@@ -121,14 +122,14 @@ export const nodeStyles = {
   disconnectAllButton: {
     position: 'absolute',
     top: 0,
-    right: 30,
-    width: 24,
-    height: 24,
+    right: 26,
+    width: 20,
+    height: 20,
     borderRadius: '50%',
     border: '2px solid #fff',
     backgroundColor: colors.status.warning,
     color: '#fff',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 700,
     display: 'flex',
     alignItems: 'center',

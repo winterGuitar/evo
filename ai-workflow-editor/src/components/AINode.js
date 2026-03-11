@@ -285,10 +285,10 @@ const AINode = ({
   const shouldShowVideoPreviewContainer = isVideoInputNode || (nodeType === 'video-gen' && Boolean(data.preview));
 
   const nodeHeaderLabelMap = {
-    'image-input': 'IMAGE INPUT',
-    'video-input': 'VIDEO INPUT',
-    'image-gen': 'IMAGE GEN',
-    'video-gen': 'VIDEO GEN'
+    'image-input': '图片输入',
+    'video-input': '视频输入',
+    'image-gen': '图片生成',
+    'video-gen': '视频生成'
   };
 
   return (
@@ -357,13 +357,13 @@ const AINode = ({
         className="nodrag nopan"
         onClick={handleDisconnectAllEdges}
         onPointerDown={(e) => e.stopPropagation()}
-        title="Disconnect all edges"
+        title="断开所有连接"
         style={{
           ...nodeStyles.disconnectAllButton,
           ...(selected ? nodeStyles.disconnectAllButtonSelected : nodeStyles.disconnectAllButtonDefault)
         }}
       >
-        |
+        断
       </button>
 
       <div style={{ display: 'flex', alignItems: 'center', marginTop: 8, marginBottom: 10 }}>
