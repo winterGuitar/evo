@@ -1108,3 +1108,213 @@ export const Position = {
   Top: 'top',
   Bottom: 'bottom'
 };
+
+// ========== 资产面板样式 ==========
+export const assetsPanelStyles = {
+  container: {
+    position: 'fixed',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    width: '900px',
+    maxHeight: '80vh',
+    backgroundColor: colors.background.primary,
+    borderRadius: '16px',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+    display: 'flex',
+    flexDirection: 'column',
+    zIndex: 2000,
+    overflow: 'hidden'
+  },
+
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '20px 24px',
+    borderBottom: `1px solid ${colors.border.light}`,
+    backgroundColor: colors.background.panel
+  },
+
+  title: {
+    margin: 0,
+    fontSize: 20,
+    fontWeight: 600,
+    color: colors.text.primary,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px'
+  },
+
+  closeButton: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 20,
+    color: colors.text.light,
+    padding: '6px 12px',
+    borderRadius: 6,
+    transition: 'all 0.2s',
+
+    '&:hover': {
+      backgroundColor: colors.background.hover,
+      color: colors.text.primary
+    }
+  },
+
+  content: {
+    flex: 1,
+    overflowY: 'auto',
+    padding: '20px 24px'
+  },
+
+  empty: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '60px 20px',
+    color: colors.text.muted
+  },
+
+  emptyHint: {
+    fontSize: 13,
+    color: colors.text.light,
+    marginTop: '8px'
+  },
+
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: colors.text.tertiary,
+    marginBottom: '16px',
+    marginTop: '24px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+
+    '&:first-child': {
+      marginTop: 0
+    }
+  },
+
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+    gap: '16px'
+  },
+
+  card: {
+    backgroundColor: colors.background.secondary,
+    borderRadius: '12px',
+    overflow: 'hidden',
+    border: `1px solid ${colors.border.default}`,
+    transition: 'all 0.2s ease',
+
+    '&:hover': {
+      borderColor: colors.node.default,
+      boxShadow: '0 4px 12px rgba(33, 150, 243, 0.12)',
+      transform: 'translateY(-2px)'
+    }
+  },
+
+  video: {
+    width: '100%',
+    aspectRatio: '16/9',
+    objectFit: 'cover',
+    backgroundColor: '#000',
+    display: 'block'
+  },
+
+  cardInfo: {
+    padding: '10px 12px'
+  },
+
+  cardName: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: colors.text.primary,
+    marginBottom: '4px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
+  },
+
+  cardDate: {
+    fontSize: 11,
+    color: colors.text.light
+  },
+
+  cardActions: {
+    display: 'flex',
+    borderTop: `1px solid ${colors.border.light}`,
+    padding: '8px 12px',
+    gap: '8px'
+  },
+
+  actionButton: {
+    flex: 1,
+    padding: '6px 8px',
+    backgroundColor: colors.node.default,
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: 11,
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+
+    '&:hover': {
+      backgroundColor: '#1976D2'
+    }
+  },
+
+  deleteButton: {
+    padding: '6px 8px',
+    backgroundColor: colors.status.error,
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: 11,
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+
+    '&:hover': {
+      backgroundColor: '#d32f2f'
+    }
+  },
+
+  footer: {
+    padding: '16px 24px',
+    borderTop: `1px solid ${colors.border.light}`,
+    display: 'flex',
+    justifyContent: 'flex-end'
+  },
+
+  clearAllButton: {
+    padding: '8px 16px',
+    backgroundColor: colors.background.hover,
+    color: colors.status.error,
+    border: `1px solid ${colors.border.default}`,
+    borderRadius: '6px',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+
+    '&:hover': {
+      backgroundColor: colors.status.error,
+      color: 'white'
+    }
+  },
+
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    zIndex: 1999
+  }
+};

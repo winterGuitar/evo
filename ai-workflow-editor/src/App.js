@@ -16,6 +16,7 @@ import {
   edgeStyles,
   miniMapStyles,
   globalStyles,
+  assetsPanelStyles,
   colors,
 } from './styles';
 import {
@@ -27,6 +28,7 @@ import NodePalette from './components/NodePalette';
 import ContextMenu from './components/ContextMenu';
 import DisconnectableEdge from './components/DisconnectableEdge';
 import ChatPanel from './components/ChatPanel';
+import AssetsPanel from './components/AssetsPanel';
 import {
   suppressResizeObserverWarning,
   createNewNode,
@@ -41,6 +43,7 @@ import {
 import { useFileStorage } from './hooks/useFileStorage';
 import { useTimeline } from './hooks/useTimeline';
 import { useNodeOperations } from './hooks/useNodeOperations';
+import { useAssets } from './hooks/useAssets';
 
 // ========== 抑制 ResizeObserver 警告 ==========
 suppressResizeObserverWarning();
@@ -355,6 +358,25 @@ const App = () => {
     handleClearTimelineSelection,
     handleComposeVideo,
   } = useTimeline(timelineItems);
+
+  // 使用资产 Hook
+  const {
+    assets,
+    isAssetsPanelOpen,
+    setIsAssetsPanelOpen,
+    addAsset,
+    deleteAsset,
+    clearAllAssets,
+    downloadAsset
+  } = useAssets();
+
+  // 包装合成视频函数，自动添加到资产列表
+  const handleComposeVideoWithAsset = useCallback(async () => {
+    const result = await handleComposeVideo();
+    if (result) {
+      addAsset(result, 'composed');
+    }
+  }, [handleComposeVideo, addAsset]);
 
   // 初始化 timelineOrder：当 timelineItems 变化时，更新 timelineOrder
   // 使用函数式更新避免依赖 timelineOrder
@@ -1733,6 +1755,12 @@ const App = () => {
                 ▶️ 运行工作流
               </button>
               <button
+                onClick={() => setIsAssetsPanelOpen(true)}
+                style={canvasStyles.primaryButton}
+              >
+                🎬 资产库 ({assets.length})
+              </button>
+              <button
                 onClick={handleClearCanvas}
                 style={canvasStyles.secondaryButton}
               >
@@ -1858,7 +1886,7 @@ const App = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={handleComposeVideo}
+                    onClick={handleComposeVideoWithAsset}
                     disabled={selectedTimelineItems.length < 2}
                     style={{
                       ...canvasStyles.timelineButton,
@@ -1980,6 +2008,22 @@ const App = () => {
             </div>
           )}
 
+        {/* 资产面板 */}
+        {isAssetsPanelOpen && (
+          <>
+            <div 
+              style={assetsPanelStyles.overlay}
+              onClick={() => setIsAssetsPanelOpen(false)}
+            />
+            <AssetsPanel
+              assets={assets}
+              onClose={() => setIsAssetsPanelOpen(false)}
+              onDownload={downloadAsset}
+              onDelete={deleteAsset}
+              onClearAll={clearAllAssets}
+            />
+          </>
+        )}
 
         {contextMenu.visible && (
           <ContextMenu

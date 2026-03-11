@@ -304,6 +304,7 @@ export const useTimeline = (timelineItems) => {
       }});
 
       console.log('视频合成完成:', finalVideoUrl);
+      return finalVideoUrl;
 
     } catch (error) {
       console.error('视频合成失败:', error);
