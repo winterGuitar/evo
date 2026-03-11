@@ -1,4 +1,3 @@
-import React from 'react';
 import { paletteStyles } from '../styles';
 import { NODE_PALETTE_CATEGORIES, getNodeColor } from '../constants';
 
@@ -54,9 +53,11 @@ const NodePalette = ({ onDragStart, composedVideoUrl, composeProgress }) => {
         {composeProgress.isComposing ? (
           <div style={paletteStyles.composedVideoProgress}>
             <div style={paletteStyles.composedVideoProgressIcon}>⏳</div>
-            <div style={paletteStyles.composedVideoProgressText}>合成中... {progressPercent}%</div>
+            <div style={paletteStyles.composedVideoProgressText}>
+              {composeProgress.stage || '合成中...'} {progressPercent}%
+            </div>
             <div style={paletteStyles.composedVideoProgressTextDetail}>
-              视频 {composeProgress.current} / {composeProgress.total}
+              步骤 {composeProgress.current} / {composeProgress.total}
             </div>
             <div style={paletteStyles.composedVideoProgressBar}>
               <div style={{
@@ -68,6 +69,7 @@ const NodePalette = ({ onDragStart, composedVideoUrl, composeProgress }) => {
         ) : composedVideoUrl ? (
           <video
             src={composedVideoUrl}
+            crossOrigin="anonymous"
             controls
             style={paletteStyles.composedVideo}
           />

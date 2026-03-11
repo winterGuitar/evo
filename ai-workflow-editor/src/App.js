@@ -1925,6 +1925,7 @@ const App = () => {
                       item.type === 'video-gen' || item.type === 'video-input' ? (
                         <video
                           src={item.preview}
+                          crossOrigin="anonymous"
                           muted
                           loop
                           autoPlay
@@ -1944,6 +1945,7 @@ const App = () => {
                         <img
                           src={item.preview}
                           alt={item.label}
+                          crossOrigin="anonymous"
                           onClick={(e) => e.stopPropagation()}
                           style={{
                             width: '104px',

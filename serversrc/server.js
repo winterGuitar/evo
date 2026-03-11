@@ -281,7 +281,13 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // 静态文件服务：暴露视频下载目录（前端可直接访问）
-app.use('/ti2v-videos', express.static(BASE_CONFIG.downloadDir));
+// 需要添加 CORP 头以支持 Cross-Origin-Embedder-Policy
+app.use('/ti2v-videos', express.static(BASE_CONFIG.downloadDir, {
+  setHeaders: (res) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
 
 // ===================== 5. 接口路由 =====================
 /**
@@ -618,7 +624,12 @@ app.post('/api/ti2v/upload', (req, res) => {
  * 接口6：提供静态文件访问
  * GET /ti2v_videos/*
  */
-app.use('/ti2v_videos', express.static(BASE_CONFIG.downloadDir));
+app.use('/ti2v_videos', express.static(BASE_CONFIG.downloadDir, {
+  setHeaders: (res) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
 
 /**
  * 接口7：获取缓存统计信息

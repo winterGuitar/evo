@@ -574,6 +574,7 @@ const AINode = ({
                 <img
                   src={item.preview}
                   alt={item.fileName || `input ${index + 1}`}
+                  crossOrigin="anonymous"
                   style={nodeStyles.inputPreviewImage}
                 />
               </div>
@@ -651,7 +652,7 @@ const AINode = ({
                   ))}
                 </div>
               ) : (
-                <img src={data.preview} alt="Preview" style={nodeStyles.previewImage} />
+                <img src={data.preview} alt="Preview" crossOrigin="anonymous" style={nodeStyles.previewImage} />
               )}
               {nodeType !== 'image-input' && (
                 <div style={nodeStyles.previewFooter} title={data.fileName || previewFooterText}>
@@ -670,6 +671,7 @@ const AINode = ({
           {data.preview ? (
             <video
               src={data.preview}
+              crossOrigin="anonymous"
               style={nodeStyles.previewVideo}
               controls
               preload="metadata"

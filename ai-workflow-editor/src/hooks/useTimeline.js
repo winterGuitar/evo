@@ -1,4 +1,6 @@
-import { useCallback, useReducer } from 'react';
+import { useCallback, useReducer, useRef } from 'react';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { toBlobURL } from '@ffmpeg/util';
 
 // API 基础地址
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
@@ -9,7 +11,7 @@ const initialState = {
   isTimelineCollapsed: false,
   composedVideoUrl: '',
   composedVideoServerPath: '',
-  composeProgress: { current: 0, total: 0, isComposing: false }
+  composeProgress: { current: 0, total: 0, isComposing: false, stage: '' }
 };
 
 const timelineReducer = (state, action) => {
@@ -45,6 +47,73 @@ const timelineReducer = (state, action) => {
  */
 export const useTimeline = (timelineItems) => {
   const [state, dispatch] = useReducer(timelineReducer, initialState);
+  const ffmpegRef = useRef(null);
+  const ffmpegLoadedRef = useRef(false);
+
+  /**
+   * 加载 FFmpeg
+   */
+  const loadFFmpeg = useCallback(async () => {
+    if (ffmpegLoadedRef.current && ffmpegRef.current) {
+      return ffmpegRef.current;
+    }
+
+    const ffmpeg = new FFmpeg();
+    ffmpegRef.current = ffmpeg;
+
+    // 设置日志回调
+    ffmpeg.on('log', ({ message }) => {
+      console.log('[FFmpeg]', message);
+    });
+
+    // 设置进度回调
+    ffmpeg.on('progress', ({ progress }) => {
+      const percent = Math.round(progress * 100);
+      console.log(`FFmpeg 进度: ${percent}%`);
+    });
+
+    // 设置错误回调
+    ffmpeg.on('loaded', () => {
+      console.log('FFmpeg 核心加载完成');
+    });
+
+    try {
+      // 使用本地 ffmpeg 文件
+      const baseURL = '/ffmpeg';
+      
+      console.log('开始加载 FFmpeg，从本地:', baseURL);
+      
+      await ffmpeg.load({
+        coreURL: `${baseURL}/ffmpeg-core.js`,
+        wasmURL: `${baseURL}/ffmpeg-core.wasm`,
+        workerURL: `${baseURL}/ffmpeg-core.worker.js`,
+      });
+
+      ffmpegLoadedRef.current = true;
+      console.log('FFmpeg 加载完成');
+      return ffmpeg;
+    } catch (loadError) {
+      console.error('本地 FFmpeg 加载失败，尝试 CDN:', loadError);
+      
+      // 如果本地加载失败，尝试从 CDN 加载
+      try {
+        const cdnURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+        console.log('尝试从 CDN 加载:', cdnURL);
+        
+        await ffmpeg.load({
+          coreURL: await toBlobURL(`${cdnURL}/ffmpeg-core.js`, 'text/javascript'),
+          wasmURL: await toBlobURL(`${cdnURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        });
+
+        ffmpegLoadedRef.current = true;
+        console.log('FFmpeg 从 CDN 加载完成');
+        return ffmpeg;
+      } catch (cdnError) {
+        console.error('CDN FFmpeg 加载也失败:', cdnError);
+        throw new Error(`FFmpeg 加载失败: ${cdnError.message}。请检查网络连接。`);
+      }
+    }
+  }, []);
 
   /**
    * 点击时间轴项目
@@ -69,45 +138,7 @@ export const useTimeline = (timelineItems) => {
   }, []);
 
   /**
-   * 加载单个视频（带超时清理）
-   */
-  const loadVideoWithTimeout = useCallback((video, url, timeout = 10000) => {
-    return new Promise((resolve) => {
-      let timeoutId = null;
-      let resolved = false;
-
-      const cleanup = () => {
-        if (timeoutId) clearTimeout(timeoutId);
-        if (!resolved) {
-          resolved = true;
-          resolve();
-        }
-      };
-
-      video.onloadedmetadata = () => {
-        console.log('视频加载完成:', url);
-        cleanup();
-      };
-
-      video.onerror = (e) => {
-        console.error('视频加载失败:', url, e);
-        cleanup();
-      };
-
-      timeoutId = setTimeout(() => {
-        console.warn('视频加载超时:', url);
-        cleanup();
-      }, timeout);
-
-      video.src = url;
-      video.crossOrigin = 'anonymous';
-      video.muted = true;
-      video.load();
-    });
-  }, []);
-
-  /**
-   * 合成视频
+   * 使用 FFmpeg 合成视频
    */
   const handleComposeVideo = useCallback(async () => {
     const { selectedTimelineItems } = state;
@@ -116,7 +147,7 @@ export const useTimeline = (timelineItems) => {
       return;
     }
 
-    // timelineItems 已经按顺序排列，直接过滤选中的项目
+    // 获取按顺序排列的选中项目
     const sortedItems = timelineItems
       .filter((item) => selectedTimelineItems.includes(item.id));
 
@@ -126,151 +157,162 @@ export const useTimeline = (timelineItems) => {
     console.log('开始合成视频，顺序:', selectedIds);
     console.log('视频URLs:', selectedUrls);
 
-    // 前端本地视频合成
     try {
-      // 初始化进度
-      dispatch({ type: 'SET_COMPOSE_PROGRESS', payload: { current: 0, total: selectedUrls.length, isComposing: true } });
+      // 阶段1：加载 FFmpeg
+      dispatch({ type: 'SET_COMPOSE_PROGRESS', payload: { 
+        current: 0, total: 4, isComposing: true, stage: '加载 FFmpeg...' 
+      }});
+      
+      const ffmpeg = await loadFFmpeg();
 
-      // 使用 MediaRecorder API 在浏览器中合并视频
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+      // 阶段2：下载所有视频文件
+      dispatch({ type: 'SET_COMPOSE_PROGRESS', payload: { 
+        current: 1, total: 4, isComposing: true, stage: '下载视频文件...' 
+      }});
 
-      // 并行加载所有视频（优化：并行而非串行）
-      const videoElements = [];
-      await Promise.all(selectedUrls.map(async (url) => {
-        const video = document.createElement('video');
-        await loadVideoWithTimeout(video, url);
-        videoElements.push(video);
-      }));
-
-      // 更新进度：开始合成
-      dispatch({ type: 'SET_COMPOSE_PROGRESS', payload: { current: 0, total: videoElements.length, isComposing: true } });
-
-      // 设置画布尺寸（使用第一个视频的尺寸）
-      const firstVideo = videoElements[0];
-      const canvasWidth = firstVideo.videoWidth || 1280;
-      const canvasHeight = firstVideo.videoHeight || 720;
-      canvas.width = canvasWidth;
-      canvas.height = canvasHeight;
-      console.log('画布尺寸:', canvasWidth, 'x', canvasHeight);
-
-      // 检查 MediaRecorder 支持的格式
-      let mimeType = 'video/webm;codecs=vp9';
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'video/webm;codecs=vp8';
-        if (!MediaRecorder.isTypeSupported(mimeType)) {
-          mimeType = 'video/webm';
-        }
-      }
-      console.log('使用媒体格式:', mimeType);
-
-      // 创建 MediaRecorder
-      const stream = canvas.captureStream(30); // 30 FPS
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType,
-        videoBitsPerSecond: 5000000 // 5 Mbps
-      });
-
-      const chunks = [];
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: mimeType });
-
-        // 上传合成视频到服务器
-        let serverUrl = '';
-        let serverPath = '';
+      const videoFiles = [];
+      for (let i = 0; i < selectedUrls.length; i++) {
+        const url = selectedUrls[i];
+        console.log(`下载视频 ${i + 1}/${selectedUrls.length}:`, url);
+        
         try {
-          const formData = new FormData();
-          formData.append('file', blob, `composed_video_${Date.now()}.webm`);
-          const uploadRes = await fetch(`${API_BASE_URL}/api/ti2v/upload`, {
-            method: 'POST',
-            body: formData
-          });
-          const uploadData = await uploadRes.json();
-          if (uploadData.code === 0) {
-            serverPath = uploadData.data.path;
-            serverUrl = `${API_BASE_URL}${serverPath}`;
-            console.log('合成视频上传成功，服务器路径:', serverPath);
-          } else {
-            console.error('合成视频上传失败:', uploadData.message);
-          }
-        } catch (e) {
-          console.error('上传合成视频失败:', e);
-        }
-
-        // 保存服务器路径，用于保存文件时使用
-        dispatch({ type: 'SET_COMPOSED_SERVER_PATH', payload: serverPath });
-        let finalVideoUrl = serverUrl;
-        if (!serverUrl) {
-          // 只在需要时创建 Blob URL
-          finalVideoUrl = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = finalVideoUrl;
-          a.download = `composed_video_${Date.now()}.webm`;
-          a.click();
-          // 立即释放 Blob URL
-          setTimeout(() => URL.revokeObjectURL(finalVideoUrl), 100);
-        }
-        // 直接设置视频 URL，不显示弹窗，视频会自动播放
-        dispatch({ type: 'SET_COMPOSED_VIDEO', payload: finalVideoUrl });
-        dispatch({ type: 'SET_COMPOSE_PROGRESS', payload: { current: videoElements.length, total: videoElements.length, isComposing: false } });
-      };
-
-      mediaRecorder.start();
-      console.log('MediaRecorder 已启动');
-
-      // 依次播放并绘制每个视频到画布
-      for (let i = 0; i < videoElements.length; i++) {
-        const video = videoElements[i];
-        console.log(`正在处理第 ${i + 1}/${videoElements.length} 个视频`);
-
-        // 更新进度
-        dispatch({ type: 'SET_COMPOSE_PROGRESS', payload: { current: i + 1, total: videoElements.length, isComposing: true } });
-
-        await new Promise((resolve) => {
-          video.currentTime = 0;
-          video.onended = resolve;
-
-          const drawFrame = () => {
-            ctx.drawImage(video, 0, 0, canvasWidth, canvasHeight);
-            if (!video.ended) {
-              requestAnimationFrame(drawFrame);
+          let videoData;
+          if (url.startsWith('blob:')) {
+            // 处理 blob URL：使用 fetch 获取
+            const response = await fetch(url);
+            const blob = await response.arrayBuffer();
+            videoData = new Uint8Array(blob);
+          } else if (url.startsWith('data:')) {
+            // 处理 data URL
+            const base64 = url.split(',')[1];
+            const binaryString = atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let j = 0; j < binaryString.length; j++) {
+              bytes[j] = binaryString.charCodeAt(j);
             }
-          };
-
-          video.play().then(() => {
-            drawFrame();
-          }).catch((e) => {
-            console.error('视频播放失败:', e);
-            resolve();
-          });
-        });
+            videoData = bytes;
+          } else {
+            // 处理普通 URL
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            videoData = new Uint8Array(arrayBuffer);
+          }
+          
+          const fileName = `input_${i}.mp4`;
+          
+          await ffmpeg.writeFile(fileName, videoData);
+          videoFiles.push(fileName);
+          console.log(`视频 ${fileName} 写入完成，大小: ${videoData.length} bytes`);
+        } catch (err) {
+          console.error(`下载视频失败: ${url}`, err);
+          throw new Error(`下载视频 ${i + 1} 失败: ${err.message}`);
+        }
       }
 
-      // 等待一小段时间确保最后几帧被录制
-      await new Promise(r => setTimeout(r, 100));
+      // 阶段3：创建 concat 文件列表
+      dispatch({ type: 'SET_COMPOSE_PROGRESS', payload: { 
+        current: 2, total: 4, isComposing: true, stage: '创建合成列表...' 
+      }});
 
-      mediaRecorder.stop();
-      console.log('MediaRecorder 已停止');
+      // 创建 concat 文件内容
+      const concatContent = videoFiles
+        .map(file => `file '${file}'`)
+        .join('\n');
+      
+      await ffmpeg.writeFile('concat.txt', concatContent);
+      console.log('Concat 文件内容:\n', concatContent);
 
-      // 清理所有视频元素
-      videoElements.forEach(video => {
-        video.pause();
-        video.src = '';
-        video.load();
-        video.remove();
-      });
+      // 阶段4：执行 FFmpeg concat 命令
+      dispatch({ type: 'SET_COMPOSE_PROGRESS', payload: { 
+        current: 3, total: 4, isComposing: true, stage: '合成视频中...' 
+      }});
+
+      // 使用 concat demuxer 合并视频
+      await ffmpeg.exec([
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', 'concat.txt',
+        '-c', 'copy',
+        '-y',
+        'output.mp4'
+      ]);
+
+      console.log('FFmpeg 合成完成');
+
+      // 读取输出文件
+      const outputData = await ffmpeg.readFile('output.mp4');
+      console.log('输出文件大小:', outputData.length, 'bytes');
+
+      // 创建 Blob
+      const blob = new Blob([outputData.buffer], { type: 'video/mp4' });
+
+      // 上传合成视频到服务器
+      let serverUrl = '';
+      let serverPath = '';
+      
+      try {
+        const formData = new FormData();
+        formData.append('file', blob, `composed_video_${Date.now()}.mp4`);
+        const uploadRes = await fetch(`${API_BASE_URL}/api/ti2v/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadData.code === 0) {
+          serverPath = uploadData.data.path;
+          serverUrl = `${API_BASE_URL}${serverPath}`;
+          console.log('合成视频上传成功，服务器路径:', serverPath);
+        } else {
+          console.error('合成视频上传失败:', uploadData.message);
+        }
+      } catch (e) {
+        console.error('上传合成视频失败:', e);
+      }
+
+      // 清理临时文件
+      for (const file of videoFiles) {
+        try {
+          await ffmpeg.deleteFile(file);
+        } catch (e) {
+          console.warn('清理临时文件失败:', file, e);
+        }
+      }
+      try {
+        await ffmpeg.deleteFile('concat.txt');
+        await ffmpeg.deleteFile('output.mp4');
+      } catch (e) {
+        console.warn('清理临时文件失败:', e);
+      }
+
+      // 保存服务器路径
+      dispatch({ type: 'SET_COMPOSED_SERVER_PATH', payload: serverPath });
+      
+      let finalVideoUrl = serverUrl;
+      if (!serverUrl) {
+        finalVideoUrl = URL.createObjectURL(blob);
+        // 自动下载
+        const a = document.createElement('a');
+        a.href = finalVideoUrl;
+        a.download = `composed_video_${Date.now()}.mp4`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(finalVideoUrl), 1000);
+      }
+
+      dispatch({ type: 'SET_COMPOSED_VIDEO', payload: finalVideoUrl });
+      dispatch({ type: 'SET_COMPOSE_PROGRESS', payload: { 
+        current: 4, total: 4, isComposing: false, stage: '完成' 
+      }});
+
+      console.log('视频合成完成:', finalVideoUrl);
+
     } catch (error) {
       console.error('视频合成失败:', error);
-      dispatch({ type: 'SET_COMPOSE_PROGRESS', payload: { current: 0, total: 0, isComposing: false } });
+      dispatch({ type: 'SET_COMPOSE_PROGRESS', payload: { 
+        current: 0, total: 0, isComposing: false, stage: '' 
+      }});
       alert(`视频合成失败: ${error.message}\n请查看控制台获取详细信息`);
     }
-  }, [state.selectedTimelineItems, timelineItems, loadVideoWithTimeout]);
+  }, [state.selectedTimelineItems, timelineItems, loadFFmpeg]);
 
   return {
     selectedTimelineItems: state.selectedTimelineItems,

@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react';
-import { colors } from '../styles';
 
 const chatPanelStyles = {
   container: {
@@ -266,8 +265,8 @@ const ChatPanel = ({ isOpen, onClose, serverUrl }) => {
         {isLoading && (
           <div style={chatPanelStyles.loading}>
             <span style={chatPanelStyles.loadingDot} />
-            <span style={chatPanelStyles.loadingDot} style={{ animationDelay: '0.2s' }} />
-            <span style={chatPanelStyles.loadingDot} style={{ animationDelay: '0.4s' }} />
+            <span style={{ ...chatPanelStyles.loadingDot, animationDelay: '0.2s' }} />
+            <span style={{ ...chatPanelStyles.loadingDot, animationDelay: '0.4s' }} />
             <span>思考中...</span>
           </div>
         )}
