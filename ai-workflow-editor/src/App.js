@@ -307,29 +307,38 @@ const App = () => {
   // 使用自定义 Hooks
   const { saveDataToFileWithCustomPath, saveToExistingFile, loadDataFromFile } = useFileStorage();
 
-  // 计算视频时间轴项目（视频输入节点和视频生成节点，按序号排序）
+  // 时间轴卡片顺序状态
+  const [timelineOrder, setTimelineOrder] = useState([]);
+
+  // 拖拽状态
+  const [draggingTimelineIndex, setDraggingTimelineIndex] = useState(null);
+  const [dragOverTimelineIndex, setDragOverTimelineIndex] = useState(null);
+
+  // 计算视频时间轴项目（视频输入节点和视频生成节点，按时间轴顺序排序）
   const timelineItems = useMemo(() => {
     const videoNodes = nodes.filter((node) =>
       ['video-input', 'video-gen'].includes(node.type) &&
-      node.data?.sequenceNumber &&
       (node.data?.preview || node.data?.lastFrame)
     );
 
     return videoNodes
       .sort((a, b) => {
-        const seqA = a.data.sequenceNumber || 999;
-        const seqB = b.data.sequenceNumber || 999;
-        return seqA - seqB;
+        // 使用 timelineOrder 决定顺序
+        const indexA = timelineOrder.indexOf(a.id);
+        const indexB = timelineOrder.indexOf(b.id);
+        if (indexA !== -1 && indexB !== -1) {
+          return indexA - indexB;
+        }
+        return indexA !== -1 ? -1 : (indexB !== -1 ? 1 : 0);
       })
       .map((node) => ({
         id: node.id,
         type: node.type,
-        sequenceNumber: node.data.sequenceNumber,
         label: node.data.label || node.data.fileName || '未命名',
         preview: node.data.preview || node.data.lastFrame,
         fileName: node.data.fileName
       }));
-  }, [nodes]);
+  }, [nodes, timelineOrder]);
 
   const {
     selectedTimelineItems,
@@ -346,6 +355,60 @@ const App = () => {
     handleClearTimelineSelection,
     handleComposeVideo,
   } = useTimeline(timelineItems);
+
+  // 初始化 timelineOrder：当 timelineItems 变化时，更新 timelineOrder
+  useEffect(() => {
+    if (timelineItems.length > 0 && timelineOrder.length === 0) {
+      // 首次加载或清空后，使用节点顺序初始化
+      setTimelineOrder(timelineItems.map(item => item.id));
+    } else if (timelineItems.length > 0) {
+      // 检查是否有新节点被添加到时间轴
+      const currentIds = timelineItems.map(item => item.id);
+      const newIds = currentIds.filter(id => !timelineOrder.includes(id));
+      if (newIds.length > 0) {
+        // 添加新节点到末尾
+        setTimelineOrder(prev => [...prev, ...newIds]);
+      }
+    }
+  }, [timelineItems, timelineOrder, setTimelineOrder]);
+
+  // 拖拽处理函数
+  const handleTimelineDragStart = useCallback((e, index) => {
+    setDraggingTimelineIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index);
+  }, []);
+
+  const handleTimelineDragOver = useCallback((e, index) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverTimelineIndex(index);
+  }, []);
+
+  const handleTimelineDragLeave = useCallback(() => {
+    setDragOverTimelineIndex(null);
+  }, []);
+
+  const handleTimelineDrop = useCallback((e, toIndex) => {
+    e.preventDefault();
+    const fromIndex = draggingTimelineIndex;
+
+    if (fromIndex !== null && fromIndex !== toIndex) {
+      // 更新 timelineOrder
+      const newOrder = [...timelineOrder];
+      const [removed] = newOrder.splice(fromIndex, 1);
+      newOrder.splice(toIndex, 0, removed);
+      setTimelineOrder(newOrder);
+    }
+
+    setDraggingTimelineIndex(null);
+    setDragOverTimelineIndex(null);
+  }, [draggingTimelineIndex, timelineOrder, setTimelineOrder]);
+
+  const handleTimelineDragEnd = useCallback(() => {
+    setDraggingTimelineIndex(null);
+    setDragOverTimelineIndex(null);
+  }, []);
 
   const {
     handleNodeImageSelect,
@@ -972,73 +1035,6 @@ const App = () => {
     });
   }, [setNodes]);
 
-
-  const handleSequenceChange = useCallback((nodeId, sequenceNumber, checkDuplicate = false) => {
-    if (!nodeId) return;
-
-    // 如果清空序号，直接允许
-    if (!sequenceNumber) {
-      setNodes((nds) => nds.map((node) => {
-        if (node.id !== nodeId) return node;
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            sequenceNumber
-          }
-        };
-      }));
-
-      setSelectedNode((prev) => {
-        if (!prev || prev.id !== nodeId) return prev;
-        return {
-          ...prev,
-          data: {
-            ...prev.data,
-            sequenceNumber
-          }
-        };
-      });
-      return;
-    }
-
-    // 只有在失焦时才检查序号是否与其他节点重复
-    if (checkDuplicate) {
-      const currentNodes = nodesRef.current;
-      const duplicateNode = currentNodes.find(
-        (node) => node.id !== nodeId && node.data?.sequenceNumber === sequenceNumber
-      );
-
-      if (duplicateNode) {
-        const duplicateNodeLabel = duplicateNode.data?.label || duplicateNode.id?.slice(-6) || '未知节点';
-        alert(`序号 ${sequenceNumber} 已被节点 "${duplicateNodeLabel}" 使用，请使用其他序号`);
-        return;
-      }
-    }
-
-    setNodes((nds) => nds.map((node) => {
-      if (node.id !== nodeId) return node;
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          sequenceNumber
-        }
-      };
-    }));
-
-    setSelectedNode((prev) => {
-      if (!prev || prev.id !== nodeId) return prev;
-      return {
-        ...prev,
-        data: {
-          ...prev.data,
-          sequenceNumber
-        }
-      };
-    });
-  }, [setNodes]);
-
   // 节点操作相关处理函数已迁移到 useNodeOperations Hook 中 (src/hooks/useNodeOperations.js)
 
   // App.js 中替换 handleSendNodeRequest 函数
@@ -1428,7 +1424,6 @@ const App = () => {
       onVideoSelect={(nodeId, file) => handleNodeVideoSelect(nodeId, file, setNodes, setSelectedNode)}
       onSendRequest={handleSendNodeRequest}
       onLastFrameCaptured={handleLastFrameCaptured}
-      onSequenceChange={handleSequenceChange}
     />,
     'video-gen': (props) => <AINode {...props}
       onDelete={(nodeId) => handleDeleteNode(nodeId, setNodes, setEdges, setSelectedNode)}
@@ -1440,7 +1435,6 @@ const App = () => {
       onVideoSelect={(nodeId, file) => handleNodeVideoSelect(nodeId, file, setNodes, setSelectedNode)}
       onSendRequest={handleSendNodeRequest}
       onLastFrameCaptured={handleLastFrameCaptured}
-      onSequenceChange={handleSequenceChange}
       onAspectRatioChange={handleNodeAspectRatioChange}
     />,
     'image-input': (props) => <AINode {...props}
@@ -1453,7 +1447,6 @@ const App = () => {
       onVideoSelect={(nodeId, file) => handleNodeVideoSelect(nodeId, file, setNodes, setSelectedNode)}
       onSendRequest={handleSendNodeRequest}
       onLastFrameCaptured={handleLastFrameCaptured}
-      onSequenceChange={handleSequenceChange}
     />,
     'video-input': (props) => <AINode {...props}
       onDelete={(nodeId) => handleDeleteNode(nodeId, setNodes, setEdges, setSelectedNode)}
@@ -1465,9 +1458,8 @@ const App = () => {
       onVideoSelect={(nodeId, file) => handleNodeVideoSelect(nodeId, file, setNodes, setSelectedNode)}
       onSendRequest={handleSendNodeRequest}
       onLastFrameCaptured={handleLastFrameCaptured}
-      onSequenceChange={handleSequenceChange}
     />,
-  }), [handleDeleteNode, handleDisconnectNodeEdges, handleResizeNode, handleNodeModelChange, handleNodeTextChange, handleNodeImageSelect, handleNodeVideoSelect, handleSendNodeRequest, handleLastFrameCaptured, handleSequenceChange, handleNodeAspectRatioChange, setNodes, setEdges, setSelectedNode]);
+  }), [handleDeleteNode, handleDisconnectNodeEdges, handleResizeNode, handleNodeModelChange, handleNodeTextChange, handleNodeImageSelect, handleNodeVideoSelect, handleSendNodeRequest, handleLastFrameCaptured, handleNodeAspectRatioChange, setNodes, setEdges, setSelectedNode]);
 
   const edgeTypes = useMemo(() => ({
     disconnectable: DisconnectableEdge
@@ -1505,7 +1497,6 @@ const App = () => {
       items: timelineItems.map(item => ({
         id: item.id,
         type: item.type,
-        sequenceNumber: item.sequenceNumber,
         label: item.label,
         preview: item.preview, // 保存引用路径
         fileName: item.fileName
@@ -1562,7 +1553,6 @@ const App = () => {
       items: timelineItems.map(item => ({
         id: item.id,
         type: item.type,
-        sequenceNumber: item.sequenceNumber,
         label: item.label,
         preview: item.preview, // 保存引用路径
         fileName: item.fileName
@@ -1880,23 +1870,48 @@ const App = () => {
                 transition: 'opacity 0.3s ease',
                 pointerEvents: isTimelineCollapsed ? 'none' : 'auto'
               }}>
-                {timelineItems.map((item) => (
+                {timelineItems.map((item, index) => (
                   <div
                     key={item.id}
+                    draggable
+                    onDragStart={(e) => handleTimelineDragStart(e, index)}
+                    onDragOver={(e) => handleTimelineDragOver(e, index)}
+                    onDragLeave={handleTimelineDragLeave}
+                    onDrop={(e) => handleTimelineDrop(e, index)}
+                    onDragEnd={handleTimelineDragEnd}
                     onClick={() => handleTimelineItemClick(item.id)}
                     style={{
                       ...canvasStyles.timelineItem,
-                      ...(selectedTimelineItems.includes(item.id) ? canvasStyles.timelineItemSelected : {})
+                      ...(selectedTimelineItems.includes(item.id) ? canvasStyles.timelineItemSelected : {}),
+                      ...(draggingTimelineIndex === index ? {
+                        opacity: 0.5,
+                        transform: 'scale(0.95)'
+                      } : {}),
+                      ...(dragOverTimelineIndex === index && draggingTimelineIndex !== index ? {
+                        borderLeft: '3px solid #4CAF50',
+                        marginLeft: '-3px'
+                      } : {}),
+                      cursor: 'grab',
+                      transition: 'all 0.2s ease'
                     }}
                   >
+                    <div style={{
+                      position: 'absolute',
+                      top: 2,
+                      left: 2,
+                      fontSize: 10,
+                      color: colors.text.light,
+                      backgroundColor: 'rgba(0,0,0,0.3)',
+                      padding: '1px 4px',
+                      borderRadius: 3
+                    }}>
+                      {index + 1}
+                    </div>
                     {selectedTimelineItems.includes(item.id) && (
                       <div style={canvasStyles.timelineItemSelectedBadge}>
                         <span style={canvasStyles.timelineItemSelectedCheck}>✓</span>
                       </div>
                     )}
-                    <div style={canvasStyles.timelineItemSequence}>
-                      #{item.sequenceNumber}
-                    </div>
                     {item.preview && (
                       item.type === 'video-gen' || item.type === 'video-input' ? (
                         <video

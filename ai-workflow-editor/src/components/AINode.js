@@ -19,8 +19,9 @@ const AINode = ({
   onVideoSelect,
   onSendRequest,
   onLastFrameCaptured,
-  onSequenceChange,
-  onAspectRatioChange
+  onAspectRatioChange,
+  onToggleTimeline,
+  isInTimeline = false
 }) => {
   const nodeRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -147,21 +148,6 @@ const AINode = ({
       onModelChange(id, undefined, { splitCols: numValue });
     }
   }, [id, onModelChange]);
-
-  const handleSequenceChange = useCallback((event) => {
-    if (!onSequenceChange) return;
-    const value = event.target.value;
-    // 只允许数字输入
-    const numericValue = value === '' ? '' : Math.max(1, parseInt(value, 10) || 1);
-    onSequenceChange(id, numericValue, false); // false 表示这是暂存值，不检查重复
-  }, [id, onSequenceChange]);
-
-  const handleSequenceBlur = useCallback((event) => {
-    if (!onSequenceChange) return;
-    const value = event.target.value;
-    const numericValue = value === '' ? '' : Math.max(1, parseInt(value, 10) || 1);
-    onSequenceChange(id, numericValue, true); // true 表示失焦，需要检查重复
-  }, [id, onSequenceChange]);
 
   const handleOpenFilePicker = useCallback((event) => {
     event.preventDefault();
@@ -322,56 +308,57 @@ const AINode = ({
         {nodeHeaderLabelMap[nodeType] || (data.type || 'AI NODE')}
       </div>
 
-      {/* 序号输入框 */}
-      <div style={{
-        position: 'absolute',
-        top: 26,
-        right: 8,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '4px',
-        zIndex: 5,
-        backgroundColor: `${nodeColor}15`,
-        padding: '3px 6px',
-        borderRadius: 4,
-        border: `1px solid ${nodeColor}40`
-      }}>
-        <span style={{ fontSize: 10, color: colors.text.light, fontWeight: 600 }}>序号:</span>
-        <input
-          type="number"
+      {/* 时间轴 Toggle 按钮 (仅视频节点显示) */}
+      {(nodeType === 'video-input' || nodeType === 'video-gen') && onToggleTimeline && (
+        <button
+          type="button"
           className="nodrag nopan"
-          value={data.sequenceNumber || ''}
-          onChange={handleSequenceChange}
-          onBlur={handleSequenceBlur}
-          onMouseDown={(event) => event.stopPropagation()}
-          style={{
-            width: '30px',
-            padding: '1px 4px',
-            fontSize: 11,
-            fontWeight: 600,
-            borderRadius: 2,
-            border: `1px solid ${colors.border.default}`,
-            outline: 'none',
-            backgroundColor: 'white',
-            color: colors.text.primary,
-            textAlign: 'center'
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleTimeline(id);
           }}
-          min="1"
-          placeholder="-"
-        />
-      </div>
-
-      <div
-        style={{ ...nodeStyles.deleteButton, ...nodeStyles.deleteButtonVisible }}
-        onClick={handleDelete}
-        title="Delete node"
-      >
-        x
-      </div>
+          style={{
+            position: 'absolute',
+            top: 26,
+            right: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            zIndex: 10,
+            backgroundColor: isInTimeline ? '#4CAF50' : `${nodeColor}15`,
+            padding: '3px 8px',
+            borderRadius: 4,
+            border: isInTimeline ? '1px solid #4CAF50' : `1px solid ${nodeColor}40`,
+            cursor: 'pointer',
+            fontSize: 10,
+            color: isInTimeline ? 'white' : colors.text.light,
+            fontWeight: 600,
+            outline: 'none',
+            transition: 'all 0.2s'
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+          title={isInTimeline ? '从时间轴移除' : '添加到时间轴'}
+        >
+          {isInTimeline ? '✓ 已添加' : '+ 时间轴'}
+        </button>
+      )}
 
       <button
         type="button"
+        className="nodrag nopan"
+        onClick={handleDelete}
+        onPointerDown={(e) => e.stopPropagation()}
+        title="Delete node"
+        style={{ ...nodeStyles.deleteButton, ...nodeStyles.deleteButtonVisible }}
+      >
+        x
+      </button>
+
+      <button
+        type="button"
+        className="nodrag nopan"
         onClick={handleDisconnectAllEdges}
+        onPointerDown={(e) => e.stopPropagation()}
         title="Disconnect all edges"
         style={{
           ...nodeStyles.disconnectAllButton,

@@ -45,15 +45,14 @@ export const useTimeline = (timelineItems) => {
       return;
     }
 
-    // 按序号排序选中的节点
+    // timelineItems 已经按顺序排列，直接过滤选中的项目
     const sortedItems = timelineItems
-      .filter((item) => selectedTimelineItems.includes(item.id))
-      .sort((a, b) => a.sequenceNumber - b.sequenceNumber);
+      .filter((item) => selectedTimelineItems.includes(item.id));
 
     const selectedUrls = sortedItems.map((item) => item.preview);
-    const selectedSequenceNumbers = sortedItems.map((item) => item.sequenceNumber);
+    const selectedIds = sortedItems.map((item) => item.id);
 
-    console.log('开始合成视频，顺序:', selectedSequenceNumbers);
+    console.log('开始合成视频，顺序:', selectedIds);
     console.log('视频URLs:', selectedUrls);
 
     // 前端本地视频合成
